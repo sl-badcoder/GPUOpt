@@ -15,3 +15,10 @@ generate_network [N]
 make test_network
 testnetwork [N]
 ```
+
+# Deliverables
+- 2–3-Page Report  
+- Implementation approach for CPU vs. GPU versions
+- Experimental methodology and setup, performance results, and analysis
+- Lessons learned
+- Source Code  
