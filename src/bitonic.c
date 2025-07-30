@@ -19,7 +19,7 @@
 static void bitonic_merge_u32(uint32_t *data, size_t start, size_t num, bool direction) {
     if(num > 1) {
         size_t buck = num / 2;
-        for(size_t i = 0; i < start + buck; i++) {
+        for(size_t i = start; i < start + buck; i++) {
             COMP_AND_SWAP(data, i, i + buck, direction);
         }
         bitonic_merge_u32(data, start, buck, direction);
@@ -30,7 +30,7 @@ static void bitonic_merge_u32(uint32_t *data, size_t start, size_t num, bool dir
 static void bitonic_merge_float(float *data, size_t start, size_t num, bool direction) {
     if(num > 1) {
         size_t buck = num / 2;
-        for(size_t i = 0; i < start + buck; i++) {
+        for(size_t i = start; i < start + buck; i++) {
             COMP_AND_SWAP(data, i, i + buck, direction);
         }
         bitonic_merge_float(data, start, buck, direction);

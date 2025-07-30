@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
-#include <stdbit.h>
+#include <stdbool.h>
 
 double getCurTime(void);
 uint32_t* create_random_data_u32(size_t N, size_t MAX_VAL);
