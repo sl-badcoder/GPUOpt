@@ -8,12 +8,14 @@
 #include "bitonic_simd_merge.h"
 #include "bitonic_gpu.h"
 #include "helper.h"
-#include <CL/cl.h>
+//#include <CL/cl.h>
+
+
 
 // HYBRID APPROACH
 // talked about in report
 // runs cpu implementation for smaller width and gpu implementation for larger widths
-static unsigned query_gpu_compute_units(void)
+/**static unsigned query_gpu_compute_units(void)
 {
     cl_uint cu = 0; cl_int e;
     cl_platform_id pf; cl_device_id dv;
@@ -73,7 +75,7 @@ int hybrid_tiered_sort_uint32(uint32_t *data, size_t n)
 
     free(tmp);
     return rc;
-}
+}**/
 
 
 int main(int argc, char **argv) {
@@ -163,9 +165,10 @@ int main(int argc, char **argv) {
 
         // Recursive Bitonic Sort
         double start = getCurTime();
-        bitonic_cellsort(data, N);
+        gpu_bitonic_sort_uint32(data, N);
         double end = getCurTime();
         if(!is_sorted_u32(data, N)) {
+            printf("Hybrid Sort in %0.8f -> %0.8f per elem!\n", end - start, ((end - start) / (double) N));
             printf("Array not sorted\n");
         } else {
             printf("Hybrid Sort in %0.8f -> %0.8f per elem!\n", end - start, ((end - start) / (double) N));

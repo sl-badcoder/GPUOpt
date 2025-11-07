@@ -1,24 +1,72 @@
-CLFAGS := -O2 -DTS=512 -DLOCAL_SIZE=256 -march=native -mavx2 -Wall -Wextra -fopenmp -pthread
+CC      := gcc
+NVCC    := nvcc
+
+CUDA_HOME ?= /usr/local/cuda
+SM        ?= 86                 
 CINCLUDE := -Iinclude
 
-all: sort generate_network
-SRC := $(addprefix src/, bitonic.c bitonic_gpu.c bitonic_simd_merge.c bitonic_cellsort.c helper.c main.c)
+CFLAGS   := -O2 -DTS=512 -DLOCAL_SIZE=256 -march=native -mavx2 -Wall -Wextra -fopenmp -pthread $(CINCLUDE)
+NVFLAGS := -O2 -Xcompiler "-fopenmp -pthread" $(CINCLUDE) \
+           -gencode arch=compute_90,code=compute_90
 
-generate_network: src/generate_network.c
-	$(CC) $(CLFAGS) $^ -o $@
 
-sort: $(SRC)
-	$(CC) $(CLFAGS) $(CINCLUDE) $(SRC) -o sort -lOpenCL
+LDFLAGS := -L$(CUDA_HOME)/lib64
+LDLIBS   := -lcudart -lgomp
 
-sort_network.o: ./sort_network/sort_newtork.c
-	$(CC) $(CLFAGS) $^ -c -o $@
+SRCDIR := src
+OBJDIR := build
 
-test_network: src/sortnet_test.c sort_network.o src/helper.c
-	$(CC) $(CFLAGS) $(CINCLUDE) $^ -o $@
+CPU_SRCS := bitonic.c bitonic_simd_merge.c bitonic_cellsort.c helper.c main.c
+CPU_SRCS := $(addprefix $(SRCDIR)/,$(CPU_SRCS))
 
-debug: $(SRC)
-	$(CC) $(CLFAGS) -g $(CINCLUDE) $(SRC) -o sort
 
-.PHONY: clean
+GPU_SRC := $(SRCDIR)/bitonic_gpu.cu    
+
+
+CPU_OBJS := $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(CPU_SRCS))
+GPU_OBJ  := $(OBJDIR)/$(notdir $(GPU_SRC:.c=.o))
+GPU_OBJ  := $(GPU_OBJ:.cu=.o)
+
+SORTNET_SRC := sort_network/sort_network.c
+SORTNET_OBJ := $(OBJDIR)/sort_network.o
+
+BIN_SORT             := sort
+BIN_GENERATE_NETWORK := generate_network
+BIN_TEST_NETWORK     := test_network
+
+
+.PHONY: all clean debug dirs
+all: dirs $(BIN_SORT) $(BIN_GENERATE_NETWORK) $(BIN_TEST_NETWORK)
+
+dirs:
+	@mkdir -p $(OBJDIR)
+
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.cu
+	$(NVCC) $(NVFLAGS) -c $< -o $@
+
+$(GPU_OBJ): $(GPU_SRC)
+	$(NVCC) $(NVFLAGS) -c $< -o $@
+
+$(SORTNET_OBJ): $(SORTNET_SRC)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BIN_SORT): $(CPU_OBJS) $(GPU_OBJ)
+	$(NVCC) -o $@ $^ $(LDFLAGS) $(LDLIBS) -cudart static
+
+
+$(BIN_GENERATE_NETWORK): $(SRCDIR)/generate_network.c
+	$(CC) $(CFLAGS) $^ -o $@
+
+$(BIN_TEST_NETWORK): $(SRCDIR)/sortnet_test.c $(SORTNET_OBJ) $(OBJDIR)/helper.o
+	$(CC) $(CFLAGS) $^ -o $@
+
+debug: CFLAGS := -g -O0 -DDEBUG -march=native -mavx2 -Wall -Wextra -fopenmp -pthread $(CINCLUDE)
+debug: NVFLAGS := -g -O0 -arch=sm_$(SM) -Xcompiler "-g -O0 -fopenmp -pthread" $(CINCLUDE)
+debug: clean all
+
 clean:
-	rm sort generate_network test_network sort_network.o ./sort_network/sort_newtork.c
+	rm -rf $(OBJDIR) $(BIN_SORT) $(BIN_GENERATE_NETWORK) $(BIN_TEST_NETWORK)
