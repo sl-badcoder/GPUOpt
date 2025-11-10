@@ -131,6 +131,18 @@ static void bottom_up_mergesort(uint32_t *data, uint32_t *tmp, size_t n) {
     }
     if (src != data) memcpy(data, src, n * 4);
 }
+static void bottom_up_mergesort_k(uint32_t *data, uint32_t *tmp, size_t n, size_t k) {
+    const size_t base =  8;
+    uint32_t *src = data, *dst = tmp;
+
+    for (size_t w = base; w < k; w <<= 1) {
+        simd_merge_pass_uint32(src, dst, w, n);
+        uint32_t *s = src;
+        src = dst;
+        dst = s;
+    }
+    if (src != data) memcpy(data, src, n * 4);
+}
 
 void simd_mergesort_uint32(uint32_t *data, size_t n) {
     if (n < 2) return;
@@ -141,5 +153,18 @@ void simd_mergesort_uint32(uint32_t *data, size_t n) {
     posix_memalign((void **) &tmp, 64, n * 4);
 
     bottom_up_mergesort(data, tmp, n);
+    free(tmp);
+}
+
+
+void simd_mergesort_uint32_k(uint32_t *data, size_t n, size_t k) {
+    if (n < 2) return;
+    vector_presort(data, n);
+
+    // Align data to cache size
+    uint32_t *tmp;
+    posix_memalign((void **) &tmp, 64, n * 4);
+
+    bottom_up_mergesort_k(data, tmp, n, k);
     free(tmp);
 }

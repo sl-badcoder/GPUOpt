@@ -8,74 +8,10 @@
 #include "bitonic_simd_merge.h"
 #include "bitonic_gpu.h"
 #include "helper.h"
-//#include <CL/cl.h>
 
 
 
-// HYBRID APPROACH
-// talked about in report
-// runs cpu implementation for smaller width and gpu implementation for larger widths
-/**static unsigned query_gpu_compute_units(void)
-{
-    cl_uint cu = 0; cl_int e;
-    cl_platform_id pf; cl_device_id dv;
-    e = clGetPlatformIDs(1,&pf,NULL); if(e) return 8;
-    e = clGetDeviceIDs(pf,CL_DEVICE_TYPE_GPU,1,&dv,NULL); if(e) return 8;
-    clGetDeviceInfo(dv, CL_DEVICE_MAX_COMPUTE_UNITS,
-                    sizeof cu, &cu, NULL);
-    return cu ? cu : 8;
-}
 
-static void cpu_merge_ladder(uint32_t *bufA,
-                             uint32_t *bufB,
-                             size_t    n,
-                             size_t    *width_io)
-{
-    size_t width = 4;
-    uint32_t *src = bufA, *dst = bufB;
-
-    const unsigned CU = query_gpu_compute_units();
-
-    for (;; width <<= 1)
-    {
-        size_t runs = (n + (2*width - 1)) / (2*width);
-        if (runs <= CU * 16 || width >= n) {
-            break;
-        }
-
-        simd_merge_pass_uint32(src, dst, width, n);
-
-        uint32_t *swap = src; src = dst; dst = swap;
-    }
-
-    if (src != bufA) memcpy(bufA, src, n * sizeof *bufA);
-    *width_io = width;
-}
-
-int hybrid_tiered_sort_uint32(uint32_t *data, size_t n)
-{
-    if (n < 8 || (n & (n-1)))
-        return -1;
-
-    vector_presort(data, n);
-    uint32_t *tmp = aligned_alloc(64, n * sizeof *tmp);
-    if (!tmp) { perror("tmp"); return -2; }
-
-    size_t next_width = 4;
-    cpu_merge_ladder(data, tmp, n, &next_width);
-
-    if (next_width >= n) {
-        free(tmp);
-        return 0;
-    }
-
-    size_t start_k = next_width;
-
-    int rc = bitonic_sort_opencl((int32_t*)data, n, start_k);
-
-    free(tmp);
-    return rc;
-}**/
 
 
 int main(int argc, char **argv) {
@@ -165,13 +101,13 @@ int main(int argc, char **argv) {
 
         // Recursive Bitonic Sort
         double start = getCurTime();
-        gpu_bitonic_sort_uint32(data, N);
+        hybrid_sort(data, N, 4096);
         double end = getCurTime();
         if(!is_sorted_u32(data, N)) {
-            printf("Hybrid Sort in %0.8f -> %0.8f per elem!\n", end - start, ((end - start) / (double) N));
+            printf("GPU Sort in %0.8f -> %0.8f per elem!\n", end - start, ((end - start) / (double) N));
             printf("Array not sorted\n");
         } else {
-            printf("Hybrid Sort in %0.8f -> %0.8f per elem!\n", end - start, ((end - start) / (double) N));
+            printf("GPU Sort in %0.8f -> %0.8f per elem!\n", end - start, ((end - start) / (double) N));
         }
         free(data);
     }
