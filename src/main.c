@@ -11,6 +11,7 @@
 #include "bitonic_gpu.h"
 #include "helper.h"
 //------------------------------------------------------------------------------------------------------------
+// this is the main function where all prgramms are called
 int main(int argc, char **argv) {
     size_t N;
     if(argc < 2) {
