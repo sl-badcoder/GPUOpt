@@ -8,6 +8,7 @@
 
 double getCurTime(void);
 uint32_t* create_random_data_u32(size_t N, size_t MAX_VAL);
+uint32_t* create_random_data_u32_pinned(size_t N, size_t MAX_VAL);
 float* create_random_data_float(size_t N);
 bool is_sorted_u32(uint32_t *data, size_t len);
 bool is_sorted_float(float *data, size_t len);

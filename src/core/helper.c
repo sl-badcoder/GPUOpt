@@ -1,4 +1,7 @@
 #include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <cuda_runtime.h>
 #include "helper.h"
 
 // Returns the current time using CLOCK_MONOTONIC
@@ -18,6 +21,23 @@ uint32_t* create_random_data_u32(size_t N, size_t MAX_VAL) {
         data[i] = rand() % MAX_VAL;
     }
     return data;
+}
+
+uint32_t* create_random_data_u32_pinned(size_t N, size_t MAX_VAL) {
+    uint32_t *data = NULL;
+    size_t bytes = N * sizeof(uint32_t);
+
+    cudaError_t st = cudaHostAlloc((void**)&data, bytes, cudaHostAllocMapped); 
+    if (st != cudaSuccess) {
+        fprintf(stderr, "cudaMallocHost failed: %s\n", cudaGetErrorString(st));
+        return NULL;
+    }
+
+  
+    for (size_t i = 0; i < N; ++i) {
+        data[i] = (uint32_t)(rand() % MAX_VAL);
+    }
+    return data; 
 }
 
 float* create_random_data_float(size_t N) {

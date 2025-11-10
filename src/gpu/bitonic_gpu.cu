@@ -247,8 +247,11 @@ extern "C" void gpu_bitonic_sort_uint32_k(uint32_t *arr, int N, int k_start) {
     // allocate the buffer array
     //------------------------------------------------------------------------------------------------------------
     uint32_t *dbuf = NULL;
-    (cudaMalloc((void**)&dbuf, (size_t)N * sizeof(uint32_t)));
-    (cudaMemcpy(dbuf, arr, (size_t)N * sizeof(uint32_t), cudaMemcpyHostToDevice));
+    cudaHostRegister(arr, N * (sizeof(uint32_t)), cudaHostRegisterMapped);
+    cudaHostGetDevicePointer(&dbuf, arr, 0);
+    //(cudaMalloc((void**)&dbuf, (size_t)N * sizeof(uint32_t)));
+    //(cudaMemcpy(dbuf, arr, (size_t)N * sizeof(uint32_t), cudaMemcpyHostToDevice));
+
     //------------------------------------------------------------------------------------------------------------
     /**cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -314,8 +317,9 @@ extern "C" void gpu_bitonic_sort_uint32_k(uint32_t *arr, int N, int k_start) {
     cudaEventDestroy(start_shared);
     cudaEventDestroy(stop_shared);**/
     //------------------------------------------------------------------------------------------------------------
-    (cudaMemcpy(arr, dbuf, (size_t)N * sizeof(uint32_t), cudaMemcpyDeviceToHost));
-    (cudaFree(dbuf));
+    //(cudaMemcpy(arr, dbuf, (size_t)N * sizeof(uint32_t), cudaMemcpyDeviceToHost));
+    //(cudaFree(dbuf));
+    cudaHostUnregister(arr);
     //------------------------------------------------------------------------------------------------------------
 }
 //------------------------------------------------------------------------------------------------------------
@@ -334,6 +338,8 @@ static void make_alternating_runs(uint32_t *a, int N, int K) {
 }
 //------------------------------------------------------------------------------------------------------------
 extern "C" void hybrid_sort(uint32_t *arr, int N, int K_CPU_MAX) {
+
+
     int K = (K_CPU_MAX);
     printf("K: %d", K);
     printf("N: %d", N);
@@ -358,22 +364,66 @@ extern "C" void hybrid_sort(uint32_t *arr, int N, int K_CPU_MAX) {
     sec = (b.tv_sec-a.tv_sec) + (b.tv_nsec-a.tv_nsec)/1e9;
     printf("CPU time used alternating: %.6f seconds\n", sec);
     //------------------------------------------------------------------------------------------------------------
-    /**cudaEvent_t start_shared, stop_shared;
+    cudaEvent_t start_shared, stop_shared;
     float ms = 0.0f;
     cudaEventCreate(&start_shared);
     cudaEventCreate(&stop_shared);
-    cudaEventRecord(start_shared);**/
+    cudaEventRecord(start_shared);
     //cudaMemcpy(d_data, arr, N*4, cudaMemcpyHostToDevice);
     gpu_bitonic_sort_uint32_k(arr, N, K);
     //cudaMemcpy(arr, d_data, N*4, cudaMemcpyDeviceToHost);
-    /**cudaDeviceSynchronize();   
+    cudaDeviceSynchronize();   
     cudaEventRecord(stop_shared);
     cudaEventSynchronize(stop_shared);
     //------------------------------------------------------------------------------------------------------------ 
     cudaEventElapsedTime(&ms, start_shared, stop_shared);
     printf("GPU Time: %.3f s\n", (ms / 1000));
     cudaEventDestroy(start_shared);
-    cudaEventDestroy(stop_shared);**/
+    cudaEventDestroy(stop_shared);
+    //------------------------------------------------------------------------------------------------------------
+}
+//------------------------------------------------------------------------------------------------------------
+extern "C" void hybrid_sort_chunk(uint32_t *arr, int N, int K_CPU_MAX) {
+    int K = (K_CPU_MAX);
+    printf("K: %d", K);
+    printf("N: %d", N);
+    bool use_cpu = false;
+    if(K_CPU_MAX < 67108864)use_cpu = true;
+    //------------------------------------------------------------------------------------------------------------
+    clock_t start, end;
+    double cpu_time_used;
+    //------------------------------------------------------------------------------------------------------------
+    struct timespec a, b; 
+    clock_gettime(CLOCK_MONOTONIC,&a);
+    //------------------------------------------------------------------------------------------------------------
+    simd_mergesort_uint32_k(arr, N, K);
+    clock_gettime(CLOCK_MONOTONIC,&b);
+    double sec = (b.tv_sec-a.tv_sec) + (b.tv_nsec-a.tv_nsec)/1e9;
+    printf("CPU time used sort: %.6f seconds\n", sec);
+    //------------------------------------------------------------------------------------------------------------
+    clock_gettime(CLOCK_MONOTONIC,&a);
+    //if (src != arr) memcpy(arr, src, N * sizeof(uint32_t));
+    make_alternating_runs(arr, N, K);
+    clock_gettime(CLOCK_MONOTONIC,&b);
+    sec = (b.tv_sec-a.tv_sec) + (b.tv_nsec-a.tv_nsec)/1e9;
+    printf("CPU time used alternating: %.6f seconds\n", sec);
+    //------------------------------------------------------------------------------------------------------------
+    cudaEvent_t start_shared, stop_shared;
+    float ms = 0.0f;
+    cudaEventCreate(&start_shared);
+    cudaEventCreate(&stop_shared);
+    cudaEventRecord(start_shared);
+    //cudaMemcpy(d_data, arr, N*4, cudaMemcpyHostToDevice);
+    gpu_bitonic_sort_uint32_k(arr, N, K);
+    //cudaMemcpy(arr, d_data, N*4, cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();   
+    cudaEventRecord(stop_shared);
+    cudaEventSynchronize(stop_shared);
+    //------------------------------------------------------------------------------------------------------------ 
+    cudaEventElapsedTime(&ms, start_shared, stop_shared);
+    printf("GPU Time: %.3f s\n", (ms / 1000));
+    cudaEventDestroy(start_shared);
+    cudaEventDestroy(stop_shared);
     //------------------------------------------------------------------------------------------------------------
 }
 //------------------------------------------------------------------------------------------------------------
