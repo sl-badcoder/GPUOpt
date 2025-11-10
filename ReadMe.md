@@ -3,22 +3,7 @@ To compile Bitonic Sort and Bitonic Sort Network generator:
 
 ```
 make sort
-make generate_network
-make all
 ```
 
-# Generate Bitonic Sort Network
-To generate and test a bitonic sort network for a given number of elements:
-
-```
-generate_network [N]
-make test_network
-testnetwork [N]
-```
-
-# Deliverables
-- 2–3-Page Report  
-- Implementation approach for CPU vs. GPU versions
-- Experimental methodology and setup, performance results, and analysis
-- Lessons learned
-- Source Code  
+# Description
+In this project a hybrid version of Bitonic Sort is implemented, which will run on the GPU and CPU, to exploit heterogeneours hardware.
