@@ -7,10 +7,18 @@
 #include <cuda_runtime.h>
 #include <time.h>
 //------------------------------------------------------------------------------------------------------------
-#include "bitonic_gpu.h"
-#include "bitonic_simd_merge.h"
+#include "gpu/bitonic_sort.h"
+#include "cpu/bitonic_simd_merge.h"
 //------------------------------------------------------------------------------------------------------------
 #define _POSIX_C_SOURCE 199309L
+#define CHECK_CUDA(call) do {                                         \
+  cudaError_t _e = (call);                                            \
+  if (_e != cudaSuccess) {                                            \
+    fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__,     \
+            cudaGetErrorString(_e));                                  \
+    exit(1);                                                          \
+  }                                                                   \
+} while (0)
 //------------------------------------------------------------------------------------------------------------
 // This is a baseline GPU implementation of bitonic sort which should be later used in the context
 // of a hybrid execution model where we switch between a CPU baseline implementation 
@@ -21,6 +29,7 @@
 // - work before writing
 //------------------------------------------------------------------------------------------------------------
 // First sort blocks which fit in shared memory 
+//------------------------------------------------------------------------------------------------------------
 template<int TILE>
 __global__ void bitonic_block_sort(uint32_t *d, int n) {
     extern __shared__ uint32_t s[]; // define array in shared memory 
@@ -136,6 +145,7 @@ __global__ void bitonic_step(uint32_t *data, int j, int k, int n) {
         }
     }
 }
+//------------------------------------------------------------------------------------------------------------
 // like bitonic step but with for loop. 
 __global__ void bitonic_step_for(uint32_t *data, int j, int k, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -156,6 +166,20 @@ __global__ void bitonic_step_for(uint32_t *data, int j, int k, int n) {
 
 }
 //------------------------------------------------------------------------------------------------------------
+static inline void reverse_block_u32(uint32_t *a, int start, int K) {
+    int i = start, j = start + K - 1;
+    while (i < j) {
+        uint32_t t = a[i]; a[i] = a[j]; a[j] = t;
+        ++i; --j;
+    }
+}
+//------------------------------------------------------------------------------------------------------------
+static void make_alternating_runs(uint32_t *a, int N, int K) {
+    for (int base = K; base + K <= N; base += 2*K) { 
+        reverse_block_u32(a, base, K);
+    }
+}
+//------------------------------------------------------------------------------------------------------------
 // IDEAS: 
 // get size of shared memory 
 // size of array / shared memory
@@ -168,8 +192,8 @@ extern "C" void gpu_bitonic_sort_uint32(uint32_t *arr, int N) {
     // allocate the buffer array
     //------------------------------------------------------------------------------------------------------------
     uint32_t *dbuf = NULL;
-    (cudaMalloc((void**)&dbuf, (size_t)N * sizeof(uint32_t)));
-    (cudaMemcpy(dbuf, arr, (size_t)N * sizeof(uint32_t), cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMalloc((void**)&dbuf, (size_t)N * sizeof(uint32_t)));
+    CHECK_CUDA(cudaMemcpy(dbuf, arr, (size_t)N * sizeof(uint32_t), cudaMemcpyHostToDevice));
     //------------------------------------------------------------------------------------------------------------
     /**cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -183,9 +207,11 @@ extern "C" void gpu_bitonic_sort_uint32(uint32_t *arr, int N) {
     //------------------------------------------------------------------------------------------------------------
     //cudaEventRecord(start);
     int grid_b = (N + TILE - 1)/ TILE;
+    CHECK_CUDA(cudaGetLastError());
     bitonic_block_sort<TILE><<<grid_b, BLOCK, shmem_block>>>(dbuf, N);
-    /**cudaDeviceSynchronize();
-    cudaEventRecord(stop);
+    CHECK_CUDA(cudaGetLastError());
+    //cudaDeviceSynchronize();
+    /**cudaEventRecord(stop);
     cudaEventSynchronize(stop);
 
     float ms = 0.0f;
@@ -215,6 +241,7 @@ extern "C" void gpu_bitonic_sort_uint32(uint32_t *arr, int N) {
                 int grid = (N + BLOCK - 1) / BLOCK;
                 //printf("grid: %d ", grid);
                 bitonic_step_for<<<grid, BLOCK>>>(dbuf, j, k, N);
+                CHECK_CUDA(cudaGetLastError());
                 //(cudaGetLastError());
             }
         }
@@ -222,6 +249,7 @@ extern "C" void gpu_bitonic_sort_uint32(uint32_t *arr, int N) {
             //int max_w = 2 * TILE;
             int grid = (N + (2*TILE) - 1) / (2*TILE);
             bitonic_shared<TILE><<<grid, BLOCK, ((2* TILE)+(2*TILE)/32)*sizeof(uint32_t)>>>(dbuf,k, N);
+            CHECK_CUDA(cudaGetLastError());
         }
 
     }
@@ -235,27 +263,25 @@ extern "C" void gpu_bitonic_sort_uint32(uint32_t *arr, int N) {
     cudaEventDestroy(start_shared);
     cudaEventDestroy(stop_shared);**/
     //------------------------------------------------------------------------------------------------------------
-    (cudaMemcpy(arr, dbuf, (size_t)N * sizeof(uint32_t), cudaMemcpyDeviceToHost));
-    (cudaFree(dbuf));
+    CHECK_CUDA(cudaMemcpy(arr, dbuf, (size_t)N * sizeof(uint32_t), cudaMemcpyDeviceToHost));
+    CHECK_CUDA(cudaFree(dbuf));
     //------------------------------------------------------------------------------------------------------------
 }
 
 
-extern "C" void gpu_bitonic_sort_uint32_k(uint32_t *arr, int N, int k_start) {
+extern "C" void gpu_bitonic_sort_uint32_k(uint32_t *arr, int N, int k_start, bool MAPPED) {
     if (N <= 1) return;
     //------------------------------------------------------------------------------------------------------------
-    // allocate the buffer array
+    // check if we map memory or not
     //------------------------------------------------------------------------------------------------------------
     uint32_t *dbuf = NULL;
-    cudaHostRegister(arr, N * (sizeof(uint32_t)), cudaHostRegisterMapped);
-    cudaHostGetDevicePointer(&dbuf, arr, 0);
-    //(cudaMalloc((void**)&dbuf, (size_t)N * sizeof(uint32_t)));
-    //(cudaMemcpy(dbuf, arr, (size_t)N * sizeof(uint32_t), cudaMemcpyHostToDevice));
-
-    //------------------------------------------------------------------------------------------------------------
-    /**cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);**/
+    if(MAPPED){
+        CHECK_CUDA(cudaHostRegister(arr, N * (sizeof(uint32_t)), cudaHostRegisterMapped));
+        CHECK_CUDA(cudaHostGetDevicePointer(&dbuf, arr, 0)); 
+    }else{
+        CHECK_CUDA(cudaMalloc((void**)&dbuf, (size_t)N * sizeof(uint32_t)));
+        CHECK_CUDA(cudaMemcpy(dbuf, arr, (size_t)N * sizeof(uint32_t), cudaMemcpyHostToDevice));
+    }
     //------------------------------------------------------------------------------------------------------------
     // define block size
     const int BLOCK = 1024;
@@ -263,167 +289,60 @@ extern "C" void gpu_bitonic_sort_uint32_k(uint32_t *arr, int N, int k_start) {
     dim3 block(BLOCK);
     size_t shmem_block = (TILE + TILE/32) * sizeof(uint32_t);
     //------------------------------------------------------------------------------------------------------------
-    //cudaEventRecord(start);
     int grid_b = (N + TILE - 1)/ TILE;
-    //bitonic_block_sort<TILE><<<grid_b, BLOCK, shmem_block>>>(dbuf, N);
-    /**cudaDeviceSynchronize();
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-
-    float ms = 0.0f;
-    cudaEventElapsedTime(&ms, start, stop);
-    printf("GPU Time: %.3f ms\n", ms);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);**/
-    //------------------------------------------------------------------------------------------------------------
-    // need to think on how to properly make use of 
-    // right now just simply launch one bitonic step is really naive. 
-    // maybe split up multiple steps such that they can exploit shared memory
     //------------------------------------------------------------------------------------------------------------ 
-    /**cudaEvent_t start_shared, stop_shared;
-    cudaEventCreate(&start_shared);
-    cudaEventCreate(&stop_shared);
-    cudaEventRecord(start_shared);**/
-    // need to rethink this for loop -> launches way to much kernels
     for (int k = 2 * k_start; k <= N; k <<= 1) {
-        //------------------------------------------------------------------------------------------------------------ 
-        // if it fits in shared memory do the work in shared memory
         //------------------------------------------------------------------------------------------------------------ 
         for (int j = k >> 1; j > TILE; j >>= 1) {
         //------------------------------------------------------------------------------------------------------------ 
-        // fallback option if it does not fit in shared memory anymore
-        //------------------------------------------------------------------------------------------------------------ 
             {
                 int grid = (N + BLOCK - 1) / BLOCK;
-                //printf("grid: %d ", grid);
                 bitonic_step_for<<<grid, BLOCK>>>(dbuf, j, k, N);
-                //(cudaGetLastError());
             }
         }
         {
-            //int max_w = 2 * TILE;
             int grid = (N + (2*TILE) - 1) / (2*TILE);
             bitonic_shared<TILE><<<grid, BLOCK, ((2* TILE)+(2*TILE)/32)*sizeof(uint32_t)>>>(dbuf,k, N);
         }
 
     }
-    //------------------------------------------------------------------------------------------------------------ 
-    /**cudaDeviceSynchronize();   
-    cudaEventRecord(stop_shared);
-    cudaEventSynchronize(stop_shared);
-    //------------------------------------------------------------------------------------------------------------ 
-    cudaEventElapsedTime(&ms, start_shared, stop_shared);
-    printf("GPU Time: %.3f ms\n", ms);
-    cudaEventDestroy(start_shared);
-    cudaEventDestroy(stop_shared);**/
     //------------------------------------------------------------------------------------------------------------
-    //(cudaMemcpy(arr, dbuf, (size_t)N * sizeof(uint32_t), cudaMemcpyDeviceToHost));
-    //(cudaFree(dbuf));
-    cudaHostUnregister(arr);
-    //------------------------------------------------------------------------------------------------------------
-}
-//------------------------------------------------------------------------------------------------------------
-static inline void reverse_block_u32(uint32_t *a, int start, int K) {
-    int i = start, j = start + K - 1;
-    while (i < j) {
-        uint32_t t = a[i]; a[i] = a[j]; a[j] = t;
-        ++i; --j;
+    if(MAPPED){
+        cudaHostUnregister(arr);
+    }else{
+        CHECK_CUDA(cudaMemcpy(arr, dbuf, (size_t)N * sizeof(uint32_t), cudaMemcpyDeviceToHost));
+        CHECK_CUDA(cudaFree(dbuf));
     }
+    //------------------------------------------------------------------------------------------------------------
 }
 //------------------------------------------------------------------------------------------------------------
-static void make_alternating_runs(uint32_t *a, int N, int K) {
-    for (int base = K; base + K <= N; base += 2*K) { 
-        reverse_block_u32(a, base, K);
+extern "C" void gpu_bitonic_sort_uint32_chunk(uint32_t *dbuf, int N, cudaStream_t s) {
+    if (N <= 1) return;
+
+    //------------------------------------------------------------------------------------------------------------
+    // define block size
+    const int BLOCK = 1024;
+    const int TILE = 4 * BLOCK;
+    dim3 block(BLOCK);
+    size_t shmem_block = (TILE + TILE/32) * sizeof(uint32_t);
+    //------------------------------------------------------------------------------------------------------------
+    int grid_b = (N + TILE - 1)/ TILE;
+    bitonic_block_sort<TILE><<<grid_b, BLOCK, shmem_block, s>>>(dbuf, N);
+    //------------------------------------------------------------------------------------------------------------
+    for (int k = 2 * TILE; k <= N; k <<= 1) {
+        //------------------------------------------------------------------------------------------------------------
+        for (int j = k >> 1; j > TILE; j >>= 1) {
+        //------------------------------------------------------------------------------------------------------------
+            {
+                int grid = (N + BLOCK - 1) / BLOCK;
+                bitonic_step_for<<<grid, BLOCK, 0, s>>>(dbuf, j, k, N);
+            }
+        }
+        {
+            int grid = (N + (2*TILE) - 1) / (2*TILE);
+            bitonic_shared<TILE><<<grid, BLOCK, ((2* TILE)+(2*TILE)/32)*sizeof(uint32_t), s>>>(dbuf,k, N);
+        }
+
     }
-}
-//------------------------------------------------------------------------------------------------------------
-extern "C" void hybrid_sort(uint32_t *arr, int N, int K_CPU_MAX) {
-
-
-    int K = (K_CPU_MAX);
-    printf("K: %d", K);
-    printf("N: %d", N);
-    bool use_cpu = false;
-    if(K_CPU_MAX < 67108864)use_cpu = true;
-    //------------------------------------------------------------------------------------------------------------
-    clock_t start, end;
-    double cpu_time_used;
-    //------------------------------------------------------------------------------------------------------------
-    struct timespec a, b; 
-    clock_gettime(CLOCK_MONOTONIC,&a);
-    //------------------------------------------------------------------------------------------------------------
-    simd_mergesort_uint32_k(arr, N, K);
-    clock_gettime(CLOCK_MONOTONIC,&b);
-    double sec = (b.tv_sec-a.tv_sec) + (b.tv_nsec-a.tv_nsec)/1e9;
-    printf("CPU time used sort: %.6f seconds\n", sec);
-    //------------------------------------------------------------------------------------------------------------
-    clock_gettime(CLOCK_MONOTONIC,&a);
-    //if (src != arr) memcpy(arr, src, N * sizeof(uint32_t));
-    make_alternating_runs(arr, N, K);
-    clock_gettime(CLOCK_MONOTONIC,&b);
-    sec = (b.tv_sec-a.tv_sec) + (b.tv_nsec-a.tv_nsec)/1e9;
-    printf("CPU time used alternating: %.6f seconds\n", sec);
-    //------------------------------------------------------------------------------------------------------------
-    cudaEvent_t start_shared, stop_shared;
-    float ms = 0.0f;
-    cudaEventCreate(&start_shared);
-    cudaEventCreate(&stop_shared);
-    cudaEventRecord(start_shared);
-    //cudaMemcpy(d_data, arr, N*4, cudaMemcpyHostToDevice);
-    gpu_bitonic_sort_uint32_k(arr, N, K);
-    //cudaMemcpy(arr, d_data, N*4, cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();   
-    cudaEventRecord(stop_shared);
-    cudaEventSynchronize(stop_shared);
-    //------------------------------------------------------------------------------------------------------------ 
-    cudaEventElapsedTime(&ms, start_shared, stop_shared);
-    printf("GPU Time: %.3f s\n", (ms / 1000));
-    cudaEventDestroy(start_shared);
-    cudaEventDestroy(stop_shared);
     //------------------------------------------------------------------------------------------------------------
 }
-//------------------------------------------------------------------------------------------------------------
-extern "C" void hybrid_sort_chunk(uint32_t *arr, int N, int K_CPU_MAX) {
-    int K = (K_CPU_MAX);
-    printf("K: %d", K);
-    printf("N: %d", N);
-    bool use_cpu = false;
-    if(K_CPU_MAX < 67108864)use_cpu = true;
-    //------------------------------------------------------------------------------------------------------------
-    clock_t start, end;
-    double cpu_time_used;
-    //------------------------------------------------------------------------------------------------------------
-    struct timespec a, b; 
-    clock_gettime(CLOCK_MONOTONIC,&a);
-    //------------------------------------------------------------------------------------------------------------
-    simd_mergesort_uint32_k(arr, N, K);
-    clock_gettime(CLOCK_MONOTONIC,&b);
-    double sec = (b.tv_sec-a.tv_sec) + (b.tv_nsec-a.tv_nsec)/1e9;
-    printf("CPU time used sort: %.6f seconds\n", sec);
-    //------------------------------------------------------------------------------------------------------------
-    clock_gettime(CLOCK_MONOTONIC,&a);
-    //if (src != arr) memcpy(arr, src, N * sizeof(uint32_t));
-    make_alternating_runs(arr, N, K);
-    clock_gettime(CLOCK_MONOTONIC,&b);
-    sec = (b.tv_sec-a.tv_sec) + (b.tv_nsec-a.tv_nsec)/1e9;
-    printf("CPU time used alternating: %.6f seconds\n", sec);
-    //------------------------------------------------------------------------------------------------------------
-    cudaEvent_t start_shared, stop_shared;
-    float ms = 0.0f;
-    cudaEventCreate(&start_shared);
-    cudaEventCreate(&stop_shared);
-    cudaEventRecord(start_shared);
-    //cudaMemcpy(d_data, arr, N*4, cudaMemcpyHostToDevice);
-    gpu_bitonic_sort_uint32_k(arr, N, K);
-    //cudaMemcpy(arr, d_data, N*4, cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();   
-    cudaEventRecord(stop_shared);
-    cudaEventSynchronize(stop_shared);
-    //------------------------------------------------------------------------------------------------------------ 
-    cudaEventElapsedTime(&ms, start_shared, stop_shared);
-    printf("GPU Time: %.3f s\n", (ms / 1000));
-    cudaEventDestroy(start_shared);
-    cudaEventDestroy(stop_shared);
-    //------------------------------------------------------------------------------------------------------------
-}
-//------------------------------------------------------------------------------------------------------------

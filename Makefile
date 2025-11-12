@@ -2,12 +2,22 @@ CC      := gcc
 NVCC    := nvcc
 
 CUDA_HOME ?= /usr/local/cuda
-SM        ?= 86
+
+# List the SMs you want *native* cubins for (adjust to your fleet)
+CUDA_ARCHS ?= 80;86;89;90
+
+# Generate -gencode lines for native cubins
+GENCODE_NATIVE := $(foreach A,$(subst ;, ,$(CUDA_ARCHS)),-gencode arch=compute_$(A),code=sm_$(A))
+
+# Keep one PTX target for forward JIT on newer GPUs (pick the highest you can compile)
+GENCODE_PTX := -gencode arch=compute_90,code=compute_90
+
 CINCLUDE  := -Iinclude
 
-CFLAGS  := -O2 -DTS=512 -DLOCAL_SIZE=256 -march=native -mavx2 -Wall -Wextra -fopenmp -pthread $(CINCLUDE) -MMD -MP
-NVFLAGS := -O2 -Xcompiler "-fopenmp -pthread" $(CINCLUDE) \
-           -gencode arch=compute_$(SM),code=sm_$(SM) -MMD -MP
+CFLAGS  := -O3 -DTS=512 -DLOCAL_SIZE=256 -march=native -mavx512f -mavx512bw -mavx512vl -Wall -Wextra -fopenmp -pthread $(CINCLUDE) -MMD -MP
+NVFLAGS := -O3 -std=c++14 --expt-extended-lambda \
+           -Xcompiler "-fopenmp -pthread" $(CINCLUDE) \
+           $(GENCODE_NATIVE) $(GENCODE_PTX) -MMD -MP
 
 LDFLAGS := -L$(CUDA_HOME)/lib64
 LDLIBS  := -lcudart -lgomp
@@ -46,7 +56,9 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cu
 -include $(OBJS:.o=.d)
 
 debug: CFLAGS  := -g -O0 -DDEBUG -march=native -mavx2 -Wall -Wextra -fopenmp -pthread $(CINCLUDE) -MMD -MP
-debug: NVFLAGS := -g -O0 -arch=sm_$(SM) -Xcompiler "-g -O0 -fopenmp -pthread" $(CINCLUDE) -MMD -MP
+debug: NVFLAGS := -g -O0 -std=c++14 --expt-extended-lambda \
+                  -Xcompiler "-g -O0 -fopenmp -pthread" $(CINCLUDE) \
+                  $(GENCODE_NATIVE) $(GENCODE_PTX) -MMD -MP
 debug: clean all
 
 clean:

@@ -1,6 +1,6 @@
 #include <unistd.h>
 
-#include "bitonic.h"
+#include "cpu/bitonic.h"
 
 #define SWAP(data, idx_i, idx_j) \
     do { \

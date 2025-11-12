@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <sys/mman.h>
 
 #ifndef MIN
 #  define MIN(a,b) ((a)<(b)?(a):(b))
@@ -61,16 +61,86 @@ static inline __m256i sort8_epi32(__m256i v)
     return _mm256_blend_epi32(min, max, 0b10101010);
 }
 
+static inline __m512i sort16_epi32(__m512i v)
+{
+    const __m512i idx1 = _mm512_set_epi32(
+        14,15,12,13,10,11,8,9,6,7,4,5,2,3,0,1);
+    const __m512i idx2 = _mm512_set_epi32(
+        13,12,15,14,9,8,11,10,5,4,7,6,1,0,3,2);
+    const __m512i idx4 = _mm512_set_epi32(
+        11,10,9,8,15,14,13,12,3,2,1,0,7,6,5,4);
+    const __m512i idx8 = _mm512_set_epi32(
+        7,6,5,4,3,2,1,0,15,14,13,12,11,10,9,8);
+
+    const __mmask16 m2  = 0xCCCC;
+    const __mmask16 m4  = 0xF0F0;
+    const __mmask16 m8  = 0xFF00;
+    const __mmask16 m1  = 0xAAAA;
+
+    __m512i t, lo, hi;
+
+    t  = _mm512_permutexvar_epi32(idx1, v);
+    lo = _mm512_min_epu32(v, t);
+    hi = _mm512_max_epu32(v, t);
+    v  = _mm512_mask_mov_epi32(lo, m1, hi);
+
+    t  = _mm512_permutexvar_epi32(idx2, v);
+    lo = _mm512_min_epu32(v, t);
+    hi = _mm512_max_epu32(v, t);
+    v  = _mm512_mask_mov_epi32(lo, m2, hi);
+
+    t  = _mm512_permutexvar_epi32(idx1, v);
+    lo = _mm512_min_epu32(v, t);
+    hi = _mm512_max_epu32(v, t);
+    v  = _mm512_mask_mov_epi32(lo, m2, hi);
+
+
+    t  = _mm512_permutexvar_epi32(idx4, v);
+    lo = _mm512_min_epu32(v, t);
+    hi = _mm512_max_epu32(v, t);
+    v  = _mm512_mask_mov_epi32(lo, m4, hi);
+
+    t  = _mm512_permutexvar_epi32(idx2, v);
+    lo = _mm512_min_epu32(v, t);
+    hi = _mm512_max_epu32(v, t);
+    v  = _mm512_mask_mov_epi32(lo, m4, hi);
+
+    t  = _mm512_permutexvar_epi32(idx1, v);
+    lo = _mm512_min_epu32(v, t);
+    hi = _mm512_max_epu32(v, t);
+    v  = _mm512_mask_mov_epi32(lo, m4, hi);
+
+    t  = _mm512_permutexvar_epi32(idx8, v);
+    lo = _mm512_min_epu32(v, t);
+    hi = _mm512_max_epu32(v, t);
+    v  = lo;
+
+    t  = _mm512_permutexvar_epi32(idx4, v);
+    lo = _mm512_min_epu32(v, t);
+    v  = lo;
+
+    t  = _mm512_permutexvar_epi32(idx2, v);
+    lo = _mm512_min_epu32(v, t);
+    v  = lo;
+
+    t  = _mm512_permutexvar_epi32(idx1, v);
+    lo = _mm512_min_epu32(v, t);
+    v  = lo;
+
+    return v;
+}
+
 // first phase sorting small 8-wide runs talked about in report
 void vector_presort(uint32_t *d, size_t n)
 {
-    size_t i = 0;
-    for (; i + 8 <= n; i += 8) {
-        __m256i v = _mm256_loadu_si256((const __m256i *)(d + i));
-        v = sort8_epi32(v);
-        _mm256_storeu_si256((__m256i *)(d + i), v);
+    const size_t end = n & ~(size_t)15;
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < end; i += 16) {
+        __m512i v = _mm512_loadu_si512((const void*)(d + i));
+        v = sort16_epi32(v);
+        _mm512_storeu_si512((void*)(d + i), v);
     }
-    for (size_t j = i + 1; j < n; ++j) {
+    for (size_t j = (end ? end + 1 : (n > 0 ? 1 : 0)); j < n; ++j) {
         uint32_t key = d[j];
         size_t k = j;
         while (k && d[k - 1] > key) {
@@ -146,11 +216,15 @@ static void bottom_up_mergesort_k(uint32_t *data, uint32_t *tmp, size_t n, size_
 
 void simd_mergesort_uint32(uint32_t *data, size_t n) {
     if (n < 2) return;
+    size_t bytes = n * sizeof(uint32_t);
     vector_presort(data, n);
 
     // Align data to cache size
     uint32_t *tmp;
-    posix_memalign((void **) &tmp, 64, n * 4);
+    posix_memalign((void **) &tmp, 64, bytes);
+    /**if(madvise(tmp, bytes, MADV_HUGEPAGE)){
+        perror("madvise");
+    }**/
 
     bottom_up_mergesort(data, tmp, n);
     free(tmp);
@@ -160,6 +234,9 @@ void simd_mergesort_uint32(uint32_t *data, size_t n) {
 void simd_mergesort_uint32_k(uint32_t *data, size_t n, size_t k) {
     if (n < 2) return;
     vector_presort(data, n);
+    if(k<=16){
+    printf("k: %d", k);
+    return;}
 
     // Align data to cache size
     uint32_t *tmp;

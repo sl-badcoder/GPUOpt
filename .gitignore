@@ -36,3 +36,6 @@ Thumbs.db
 
 *.nvvp
 *.prof
+
+# remove perf files
+*perf*

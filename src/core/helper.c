@@ -1,16 +1,20 @@
+//------------------------------------------------------------------------------------------------------------
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <cuda_runtime.h>
-#include "helper.h"
-
+#include <immintrin.h>
+#include <stdint.h>
+//------------------------------------------------------------------------------------------------------------
+#include "core/helper.h"
+//------------------------------------------------------------------------------------------------------------
 // Returns the current time using CLOCK_MONOTONIC
 double getCurTime(void) {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC_RAW, &t);
     return t.tv_sec + t.tv_nsec*1e-9;
 }
-
+//------------------------------------------------------------------------------------------------------------
 uint32_t* create_random_data_u32(size_t N, size_t MAX_VAL) {
     uint32_t* data = malloc(N * sizeof(uint32_t));
     if (!data) {
@@ -22,8 +26,28 @@ uint32_t* create_random_data_u32(size_t N, size_t MAX_VAL) {
     }
     return data;
 }
-
+//------------------------------------------------------------------------------------------------------------
+// create data for pinned memory tests
+//------------------------------------------------------------------------------------------------------------
 uint32_t* create_random_data_u32_pinned(size_t N, size_t MAX_VAL) {
+    uint32_t *data = NULL;
+    size_t bytes = N * sizeof(uint32_t);
+
+    cudaError_t st = cudaMallocHost((void**)&data, bytes); 
+    if (st != cudaSuccess) {
+        fprintf(stderr, "cudaMallocHost failed: %s\n", cudaGetErrorString(st));
+        return NULL;
+    }
+  
+    for (size_t i = 0; i < N; ++i) {
+        data[i] = (uint32_t)(rand() % MAX_VAL);
+    }
+    return data; 
+}
+//------------------------------------------------------------------------------------------------------------
+// create data for mapped memory tests
+//------------------------------------------------------------------------------------------------------------
+uint32_t* create_random_data_u32_mapped(size_t N, size_t MAX_VAL) {
     uint32_t *data = NULL;
     size_t bytes = N * sizeof(uint32_t);
 
@@ -33,13 +57,13 @@ uint32_t* create_random_data_u32_pinned(size_t N, size_t MAX_VAL) {
         return NULL;
     }
 
-  
+
     for (size_t i = 0; i < N; ++i) {
         data[i] = (uint32_t)(rand() % MAX_VAL);
     }
     return data; 
 }
-
+//------------------------------------------------------------------------------------------------------------
 float* create_random_data_float(size_t N) {
     float* data = malloc(N * sizeof(float));
     if (!data) {
@@ -51,7 +75,7 @@ float* create_random_data_float(size_t N) {
     }
     return data;
 }
-
+//------------------------------------------------------------------------------------------------------------
 bool is_sorted_u32(uint32_t *data, size_t len) {
     for(size_t i = 0; i < len - 1; ++i) {
         if(data[i] > data[i+1]) {
@@ -61,7 +85,7 @@ bool is_sorted_u32(uint32_t *data, size_t len) {
     }
     return true;
 }
-
+//------------------------------------------------------------------------------------------------------------
 bool is_sorted_float(float *data, size_t len) {
     for(size_t i = 0; i < len - 1; ++i) {
         if(data[i] > data[i+1]) {
@@ -71,7 +95,7 @@ bool is_sorted_float(float *data, size_t len) {
     }
     return true;
 }
-
+//------------------------------------------------------------------------------------------------------------
 int qsort_u32(const void *elem1, const void *elem2) {
     if(*((uint32_t*)elem1) > *((uint32_t*)elem2)) {
         return 1;
@@ -80,7 +104,7 @@ int qsort_u32(const void *elem1, const void *elem2) {
     }
     return 0;
 }
-
+//------------------------------------------------------------------------------------------------------------
 int qsort_float(const void *elem1, const void *elem2) {
     if(*((float*)elem1) > *((float*)elem2)) {
         return 1;
@@ -88,4 +112,56 @@ int qsort_float(const void *elem1, const void *elem2) {
         return -1;
     }
     return 0;
+}
+//------------------------------------------------------------------------------------------------------------
+void reverse_block_u32_avx512(uint32_t *a, int start, int K) {
+    if (K <= 1) return;
+
+    const __m512i idx_rev = _mm512_set_epi32(
+        0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+    );
+
+    int i = 0;
+    int j = K;
+
+    while (j - i >= 16) {
+        __m512i L = _mm512_loadu_si512((const void*)(a + start + i));
+        __m512i R = _mm512_loadu_si512((const void*)(a + start + (j - 16)));
+
+        const __m512i idx = _mm512_set_epi32(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15
+        );
+        const __m512i idx_r = _mm512_set_epi32(
+            15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0
+        );
+
+        __m512i L_rev = _mm512_permutexvar_epi32(idx_r, L);
+        __m512i R_rev = _mm512_permutexvar_epi32(idx_r, R);
+
+        _mm512_storeu_si512((void*)(a + start + i),        R_rev);
+        _mm512_storeu_si512((void*)(a + start + (j - 16)), L_rev);
+
+        i += 16;
+        j -= 16;
+    }
+
+    int left = start + i;
+    int right = start + j - 1;
+    while (left < right) {
+        uint32_t t = a[left]; a[left] = a[right]; a[right] = t;
+        ++left; --right;
+    }
+}
+//------------------------------------------------------------------------------------------------------------
+void make_alternating_runs(uint32_t *a, int N, int K) {
+    if (K <= 1 || N <= K) return;
+
+    int count = (N - K) / (2 * K);
+    if (count <= 0) return;
+
+    #pragma omp parallel for schedule(static)
+    for (int m = 0; m < count; ++m) {
+        int base = K + (2 * K) * m;
+        reverse_block_u32_avx512(a, base, K);
+    }
 }
