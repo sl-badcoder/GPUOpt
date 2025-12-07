@@ -1,5 +1,5 @@
 CC      := gcc
-NVCC    := nvcc
+NVCC    := /usr/local/cuda/bin/nvcc
 
 CUDA_HOME ?= /usr/local/cuda
 
@@ -19,8 +19,8 @@ NVFLAGS := -O3 -std=c++14 --expt-extended-lambda \
            -Xcompiler "-fopenmp -pthread" $(CINCLUDE) \
            $(GENCODE_NATIVE) $(GENCODE_PTX) -MMD -MP
 
-LDFLAGS := -L$(CUDA_HOME)/lib64
-LDLIBS  := -lcudart -lgomp
+LDFLAGS := -L/usr/local/cuda/targets/x86_64-linux/lib  
+LDLIBS  := -lgomp -lcufft_static -lculibos
 
 SRCDIR := src
 OBJDIR := build
@@ -47,7 +47,7 @@ $(BIN_SORT): $(OBJS)
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@ 
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cu
 	@mkdir -p $(dir $@)

@@ -1,3 +1,4 @@
+//------------------------------------------------------------------------------------------------------------
 #include <immintrin.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -5,16 +6,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
-
+//------------------------------------------------------------------------------------------------------------
 #ifndef MIN
 #  define MIN(a,b) ((a)<(b)?(a):(b))
 #endif
-
+//------------------------------------------------------------------------------------------------------------
 static int cmp_uint32(const void *a, const void *b) {
     uint32_t aa = *(const uint32_t *) a, bb = *(const uint32_t *) b;
     return (aa > bb) - (aa < bb);
 }
-
+//------------------------------------------------------------------------------------------------------------
 static inline __m128i sort4_epi32(__m128i v) {
     __m128i t = _mm_shuffle_epi32(v,_MM_SHUFFLE(2, 3, 0, 1));
     __m128i lo = _mm_min_epu32(v, t), hi = _mm_max_epu32(v, t);
@@ -28,8 +29,9 @@ static inline __m128i sort4_epi32(__m128i v) {
     hi = _mm_max_epu32(v, t);
     return _mm_unpacklo_epi64(lo, hi);
 }
-
+//------------------------------------------------------------------------------------------------------------
 // SIMD 8-WIDE IMPLEMENTATION -> different to paper (only 4)
+//------------------------------------------------------------------------------------------------------------
 static inline __m256i sort8_epi32(__m256i v)
 {
     __m128i lo = _mm256_castsi256_si128(v);
@@ -60,7 +62,7 @@ static inline __m256i sort8_epi32(__m256i v)
     max = _mm256_max_epu32(v, t);
     return _mm256_blend_epi32(min, max, 0b10101010);
 }
-
+//------------------------------------------------------------------------------------------------------------
 static inline __m512i sort16_epi32(__m512i v)
 {
     const __m512i idx1 = _mm512_set_epi32(
@@ -93,7 +95,6 @@ static inline __m512i sort16_epi32(__m512i v)
     lo = _mm512_min_epu32(v, t);
     hi = _mm512_max_epu32(v, t);
     v  = _mm512_mask_mov_epi32(lo, m2, hi);
-
 
     t  = _mm512_permutexvar_epi32(idx4, v);
     lo = _mm512_min_epu32(v, t);
@@ -129,8 +130,9 @@ static inline __m512i sort16_epi32(__m512i v)
 
     return v;
 }
-
+//------------------------------------------------------------------------------------------------------------
 // first phase sorting small 8-wide runs talked about in report
+//------------------------------------------------------------------------------------------------------------
 void vector_presort(uint32_t *d, size_t n)
 {
     const size_t end = n & ~(size_t)15;
@@ -150,7 +152,7 @@ void vector_presort(uint32_t *d, size_t n)
         d[k] = key;
     }
 }
-
+//------------------------------------------------------------------------------------------------------------
 static inline void merge_scalar(uint32_t *dst,
                                 const uint32_t *L, size_t nl,
                                 const uint32_t *R, size_t nr) {
@@ -165,19 +167,19 @@ static inline void merge_scalar(uint32_t *dst,
     if (i < nl) memcpy(dst + k, L + i, (nl - i) * 4);
     if (j < nr) memcpy(dst + k, R + j, (nr - j) * 4);
 }
-
+//------------------------------------------------------------------------------------------------------------
 void simd_merge_pass_uint32(const uint32_t *src,
                             uint32_t *dst,
                             size_t width,
                             size_t n) {
     size_t chunks = (n + (2 * width - 1)) / (2 * width);
-
+//------------------------------------------------------------------------------------------------------------
 #pragma omp parallel for schedule(static)
     for (ptrdiff_t c = 0; c < (ptrdiff_t) chunks; ++c) {
         size_t first = c * 2 * width;
         size_t mid = MIN(first+width, n);
         size_t last = MIN(first+2*width, n);
-
+        //------------------------------------------------------------------------------------------------------------
         if (mid == last) {
             memcpy(dst + first, src + first, (last - first) * 4);
             continue;
@@ -187,12 +189,13 @@ void simd_merge_pass_uint32(const uint32_t *src,
                      src + mid, last - mid);
     }
 }
-
+//------------------------------------------------------------------------------------------------------------
 // Bottom-up Merge (second phase talked in report)
+//------------------------------------------------------------------------------------------------------------
 static void bottom_up_mergesort(uint32_t *data, uint32_t *tmp, size_t n) {
     const size_t base =  8;
     uint32_t *src = data, *dst = tmp;
-
+    //------------------------------------------------------------------------------------------------------------
     for (size_t w = base; w < n; w <<= 1) {
         simd_merge_pass_uint32(src, dst, w, n);
         uint32_t *s = src;
@@ -201,10 +204,11 @@ static void bottom_up_mergesort(uint32_t *data, uint32_t *tmp, size_t n) {
     }
     if (src != data) memcpy(data, src, n * 4);
 }
+//------------------------------------------------------------------------------------------------------------
 static void bottom_up_mergesort_k(uint32_t *data, uint32_t *tmp, size_t n, size_t k) {
     const size_t base =  8;
     uint32_t *src = data, *dst = tmp;
-
+    //------------------------------------------------------------------------------------------------------------
     for (size_t w = base; w < k; w <<= 1) {
         simd_merge_pass_uint32(src, dst, w, n);
         uint32_t *s = src;
@@ -213,35 +217,35 @@ static void bottom_up_mergesort_k(uint32_t *data, uint32_t *tmp, size_t n, size_
     }
     if (src != data) memcpy(data, src, n * 4);
 }
-
+//------------------------------------------------------------------------------------------------------------
 void simd_mergesort_uint32(uint32_t *data, size_t n) {
     if (n < 2) return;
     size_t bytes = n * sizeof(uint32_t);
     vector_presort(data, n);
-
+    //------------------------------------------------------------------------------------------------------------
     // Align data to cache size
     uint32_t *tmp;
     posix_memalign((void **) &tmp, 64, bytes);
     /**if(madvise(tmp, bytes, MADV_HUGEPAGE)){
         perror("madvise");
     }**/
-
+    //------------------------------------------------------------------------------------------------------------
     bottom_up_mergesort(data, tmp, n);
     free(tmp);
 }
-
-
+//------------------------------------------------------------------------------------------------------------
 void simd_mergesort_uint32_k(uint32_t *data, size_t n, size_t k) {
     if (n < 2) return;
     vector_presort(data, n);
     if(k<=16){
     printf("k: %d", k);
     return;}
-
+    //------------------------------------------------------------------------------------------------------------
     // Align data to cache size
     uint32_t *tmp;
     posix_memalign((void **) &tmp, 64, n * 4);
-
+    //------------------------------------------------------------------------------------------------------------
     bottom_up_mergesort_k(data, tmp, n, k);
     free(tmp);
 }
+//------------------------------------------------------------------------------------------------------------

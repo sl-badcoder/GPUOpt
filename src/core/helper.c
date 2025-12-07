@@ -64,6 +64,22 @@ uint32_t* create_random_data_u32_mapped(size_t N, size_t MAX_VAL) {
     return data; 
 }
 //------------------------------------------------------------------------------------------------------------
+uint32_t* create_random_data_u32_unified(size_t N, size_t MAX_VAL) {
+    uint32_t *data = NULL;
+    size_t bytes = N * sizeof(uint32_t);
+
+    cudaError_t st = cudaMallocManaged((void**)&data, bytes, cudaMemAttachGlobal); 
+    if (st != cudaSuccess) {
+        fprintf(stderr, "cudaMallocHost failed: %s\n", cudaGetErrorString(st));
+        return NULL;
+    }
+
+    for (size_t i = 0; i < N; ++i) {
+        data[i] = (uint32_t)(rand() % MAX_VAL);
+    }
+    return data; 
+}
+//------------------------------------------------------------------------------------------------------------
 float* create_random_data_float(size_t N) {
     float* data = malloc(N * sizeof(float));
     if (!data) {
@@ -165,3 +181,12 @@ void make_alternating_runs(uint32_t *a, int N, int K) {
         reverse_block_u32_avx512(a, base, K);
     }
 }
+//------------------------------------------------------------------------------------------------------------
+#define CHECK_CUDA(call) do {                                         \
+  cudaError_t _e = (call);                                            \
+  if (_e != cudaSuccess) {                                            \
+    fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__,     \
+            cudaGetErrorString(_e));                                  \
+    exit(1);                                                          \
+  }                                                                   \
+} while (0)

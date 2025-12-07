@@ -1,3 +1,4 @@
+//------------------------------------------------------------------------------------------------------------
 #include <pthread.h>
 #include <immintrin.h>
 #include <stdint.h>
@@ -6,25 +7,21 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-
-
+//------------------------------------------------------------------------------------------------------------
 #ifndef MIN
 #  define MIN(a,b) ((a) < (b) ? (a) : (b))
 #endif
-
+//------------------------------------------------------------------------------------------------------------
 #ifndef MAX
 #  define MAX(a,b) ((a) > (b) ? (a) : (b))
 #endif
-
-
+//------------------------------------------------------------------------------------------------------------
 static uint32_t        *g_data;
 static size_t           g_N;
 static int              g_P;
 static size_t           g_chunk;
 static pthread_barrier_t g_barrier;
-
-
-
+//------------------------------------------------------------------------------------------------------------
 static inline void bitonic_merge_scalar(uint32_t *a, size_t n, bool asc) {
     if (n <= 1) return;
     size_t half = n >> 1;
@@ -35,6 +32,7 @@ static inline void bitonic_merge_scalar(uint32_t *a, size_t n, bool asc) {
     bitonic_merge_scalar(a,        half, asc);
     bitonic_merge_scalar(a+half,   half, asc);
 }
+//------------------------------------------------------------------------------------------------------------
 static void bitonic_sort_scalar(uint32_t *a, size_t n, bool asc) {
     if (n <= 1) return;
     size_t half = n >> 1;
@@ -42,7 +40,7 @@ static void bitonic_sort_scalar(uint32_t *a, size_t n, bool asc) {
     bitonic_sort_scalar(a+half,   half, false);
     bitonic_merge_scalar(a, n, asc);
 }
-
+//------------------------------------------------------------------------------------------------------------
 static inline __m256i bitonic_sort8_u32(__m256i v) {
     __m256i sh1 = _mm256_permutevar8x32_epi32(v, _mm256_setr_epi32(4,5,6,7,0,1,2,3));
     __m256i lo1 = _mm256_min_epu32(v, sh1);
@@ -60,7 +58,7 @@ static inline __m256i bitonic_sort8_u32(__m256i v) {
     v = _mm256_blend_epi32(lo3, hi3, 0b10101010);
     return v;
 }
-
+//------------------------------------------------------------------------------------------------------------
 static void chunk_sort_simd(uint32_t *ptr, size_t len, bool asc) {
     size_t i = 0;
     for (; i + 7 < len; i += 8) {
@@ -80,8 +78,7 @@ static void chunk_sort_simd(uint32_t *ptr, size_t len, bool asc) {
         }
     }
 }
-
-
+//------------------------------------------------------------------------------------------------------------
 static void *cellsort_thread(void *arg) {
     int tid = (int)(intptr_t)arg;
     size_t start = (size_t)tid * g_chunk;
@@ -122,9 +119,7 @@ static void *cellsort_thread(void *arg) {
     }
     return NULL;
 }
-
-
-
+//------------------------------------------------------------------------------------------------------------
 void bitonic_cellsort(uint32_t *data, size_t N) {
     g_data = data;
     g_N    = N;
@@ -140,21 +135,19 @@ void bitonic_cellsort(uint32_t *data, size_t N) {
     for (int t = 0; t < g_P; ++t) pthread_join(th[t], NULL);
     pthread_barrier_destroy(&g_barrier);
 }
-
-
-
+//------------------------------------------------------------------------------------------------------------
 static inline void cas_pair(uint32_t *a, uint32_t *b, bool asc)
 {
     uint32_t x = *a, y = *b;
     if ( (x > y) == asc ) { *a = y; *b = x; }
 }
-
+//------------------------------------------------------------------------------------------------------------
 static inline void cas_u32(uint32_t *a, uint32_t *b, bool asc)
 {
     uint32_t x = *a, y = *b;
     if ( (x > y) == asc ) { *a = y; *b = x; }
 }
-
+//------------------------------------------------------------------------------------------------------------
 static void *cellsort_thread_bitonic(void *arg)
 {
     const int    tid    = (int)(intptr_t)arg;
@@ -185,7 +178,7 @@ static void *cellsort_thread_bitonic(void *arg)
     }
     return NULL;
 }
-
+//------------------------------------------------------------------------------------------------------------
 void bitonic_cellsort_oddeven(uint32_t *data, size_t N)
 {
     g_data = data;  g_N = N;
@@ -201,4 +194,4 @@ void bitonic_cellsort_oddeven(uint32_t *data, size_t N)
     for (int t=0;t<g_P;++t) pthread_join(th[t],NULL);
     pthread_barrier_destroy(&g_barrier);
 }
-
+//------------------------------------------------------------------------------------------------------------

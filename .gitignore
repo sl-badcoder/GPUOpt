@@ -39,3 +39,7 @@ Thumbs.db
 
 # remove perf files
 *perf*
+/gpu_profiling_results/
+
+*.nsys*
+*.sqlite*
