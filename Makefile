@@ -1,5 +1,5 @@
 CC      := gcc
-NVCC    := /usr/local/cuda/bin/nvcc
+NVCC    := nvcc
 
 CUDA_HOME ?= /usr/local/cuda
 
