@@ -16,7 +16,8 @@ double getCurTime(void) {
 }
 //------------------------------------------------------------------------------------------------------------
 uint32_t* create_random_data_u32(size_t N, size_t MAX_VAL) {
-    uint32_t* data = malloc(N * sizeof(uint32_t));
+    uint32_t* data;
+    posix_memalign((void **) &data, 64, N * sizeof(uint32_t));
     if (!data) {
         perror("malloc failed");
         return NULL;
@@ -29,16 +30,13 @@ uint32_t* create_random_data_u32(size_t N, size_t MAX_VAL) {
 //------------------------------------------------------------------------------------------------------------
 // create data for pinned memory tests
 //------------------------------------------------------------------------------------------------------------
-uint32_t* create_random_data_u32_pinned(size_t N, size_t MAX_VAL) {
+uint32_t* create_random_data_u32_pinned(long long N, size_t MAX_VAL) {
     uint32_t *data = NULL;
-    size_t bytes = N * sizeof(uint32_t);
-
-    cudaError_t st = cudaMallocHost((void**)&data, bytes); 
-    if (st != cudaSuccess) {
-        fprintf(stderr, "cudaMallocHost failed: %s\n", cudaGetErrorString(st));
-        return NULL;
-    }
-  
+    long long bytes = N *(long long)  sizeof(uint32_t);
+    size_t tmp = N * (long long) sizeof(uint32_t) / (long long)(1024.0 * 1024.0);
+    printf("[ALLOCATE] ARRAY OF SIZE: %lld MiB\n", tmp);
+    CHECK_CUDA(cudaMallocHost((void**)&data, bytes)); 
+    
     for (size_t i = 0; i < N; ++i) {
         data[i] = (uint32_t)(rand() % MAX_VAL);
     }
@@ -47,32 +45,28 @@ uint32_t* create_random_data_u32_pinned(size_t N, size_t MAX_VAL) {
 //------------------------------------------------------------------------------------------------------------
 // create data for mapped memory tests
 //------------------------------------------------------------------------------------------------------------
-uint32_t* create_random_data_u32_mapped(size_t N, size_t MAX_VAL) {
+uint32_t* create_random_data_u32_mapped(long long N, size_t MAX_VAL) {
     uint32_t *data = NULL;
-    size_t bytes = N * sizeof(uint32_t);
-
-    cudaError_t st = cudaHostAlloc((void**)&data, bytes, cudaHostAllocMapped); 
-    if (st != cudaSuccess) {
-        fprintf(stderr, "cudaMallocHost failed: %s\n", cudaGetErrorString(st));
-        return NULL;
-    }
-
-
+    long long bytes = N * (long long) sizeof(uint32_t);
+    long long tmp = N * (long long) sizeof(uint32_t) / (long long)(1024.0 * 1024.0);
+    printf("[ALLOCATE] ARRAY OF SIZE: %lld MiB\n", tmp);
+    CHECK_CUDA(cudaHostAlloc((void**)&data, bytes, cudaHostAllocMapped)); 
+    
     for (size_t i = 0; i < N; ++i) {
         data[i] = (uint32_t)(rand() % MAX_VAL);
     }
     return data; 
 }
 //------------------------------------------------------------------------------------------------------------
-uint32_t* create_random_data_u32_unified(size_t N, size_t MAX_VAL) {
+uint32_t* create_random_data_u32_unified(long long N, size_t MAX_VAL) {
     uint32_t *data = NULL;
-    size_t bytes = N * sizeof(uint32_t);
-
-    cudaError_t st = cudaMallocManaged((void**)&data, bytes, cudaMemAttachGlobal); 
-    if (st != cudaSuccess) {
-        fprintf(stderr, "cudaMallocHost failed: %s\n", cudaGetErrorString(st));
-        return NULL;
-    }
+    long long bytes = N *(long long)  sizeof(uint32_t);
+   
+    long long tmp = N * (long long) sizeof(uint32_t) / (long long)(1024.0 * 1024.0);
+   
+    printf("[ALLOCATE] ARRAY OF SIZE: %lld MiB\n", tmp);
+   
+    CHECK_CUDA(cudaMallocManaged((void**)&data, bytes, cudaMemAttachGlobal)); 
 
     for (size_t i = 0; i < N; ++i) {
         data[i] = (uint32_t)(rand() % MAX_VAL);
@@ -190,3 +184,13 @@ void make_alternating_runs(uint32_t *a, int N, int K) {
     exit(1);                                                          \
   }                                                                   \
 } while (0)
+//------------------------------------------------------------------------------------------------------------
+size_t L3CACHE = 33554432;
+//------------------------------------------------------------------------------------------------------------
+void warmup_cache(){
+    char val[33554432] = {0};
+    for(int i=0;i<L3CACHE;i++){
+        val[i] += 1;
+    }
+}
+//------------------------------------------------------------------------------------------------------------
