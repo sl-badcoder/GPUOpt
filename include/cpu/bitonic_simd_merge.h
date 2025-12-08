@@ -15,6 +15,8 @@ void simd_merge_pass_uint32(const uint32_t *src,
                             size_t          width,
                             size_t          n);
 void simd_mergesort_uint32_k(uint32_t *data, size_t n, size_t k);
+void simd_bitonic_sort_uint32(uint32_t *data, size_t n);
+void simd_bitonic_sort_uint32_k(uint32_t *data, size_t n, size_t k_start);
 #ifdef __cplusplus
 }
 #endif

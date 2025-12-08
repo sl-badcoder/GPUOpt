@@ -191,6 +191,8 @@ void simd_merge_pass_uint32(const uint32_t *src,
 }
 //------------------------------------------------------------------------------------------------------------
 // Bottom-up Merge (second phase talked in report)
+// space complexity: O(n) is way to expensive 
+// out-of-place is not the best
 //------------------------------------------------------------------------------------------------------------
 static void bottom_up_mergesort(uint32_t *data, uint32_t *tmp, size_t n) {
     const size_t base =  8;
@@ -220,15 +222,16 @@ static void bottom_up_mergesort_k(uint32_t *data, uint32_t *tmp, size_t n, size_
 //------------------------------------------------------------------------------------------------------------
 void simd_mergesort_uint32(uint32_t *data, size_t n) {
     if (n < 2) return;
-    size_t bytes = n * sizeof(uint32_t);
+    size_t bytes = n * (size_t) sizeof(uint32_t);
     vector_presort(data, n);
     //------------------------------------------------------------------------------------------------------------
     // Align data to cache size
     uint32_t *tmp;
-    posix_memalign((void **) &tmp, 64, bytes);
-    /**if(madvise(tmp, bytes, MADV_HUGEPAGE)){
-        perror("madvise");
-    }**/
+    int err = posix_memalign((void **) &tmp, 64, bytes);
+    if (err != 0) {
+        fprintf(stderr, "posix_memalign failed for %zu bytes: %s\n", bytes, strerror(err));
+        exit(1);
+    }
     //------------------------------------------------------------------------------------------------------------
     bottom_up_mergesort(data, tmp, n);
     free(tmp);
@@ -238,8 +241,9 @@ void simd_mergesort_uint32_k(uint32_t *data, size_t n, size_t k) {
     if (n < 2) return;
     vector_presort(data, n);
     if(k<=16){
-    printf("k: %d", k);
-    return;}
+        //printf("k: %d", k);
+        return;
+    }
     //------------------------------------------------------------------------------------------------------------
     // Align data to cache size
     uint32_t *tmp;
@@ -247,5 +251,118 @@ void simd_mergesort_uint32_k(uint32_t *data, size_t n, size_t k) {
     //------------------------------------------------------------------------------------------------------------
     bottom_up_mergesort_k(data, tmp, n, k);
     free(tmp);
+}
+//------------------------------------------------------------------------------------------------------------
+static void bitonic_step_simd512(uint32_t *data, size_t n,
+                                       size_t k)
+{
+    const size_t VEC = 16;
+    size_t j = k >> 1;
+
+    #pragma omp for schedule(static)
+    for (ptrdiff_t block = 0; block < (ptrdiff_t)n; block += (ptrdiff_t)k) {
+        size_t b = (size_t)block;
+
+        if (b >= n) continue;
+        size_t span = n - b;
+
+        if (span <= j) continue;
+
+        size_t max_pairs = span - j;
+        size_t eff_j = (max_pairs < j) ? max_pairs : j;
+        if (eff_j == 0) continue;
+
+        int ascending = ((b & k) == 0);
+
+        size_t l = 0;
+
+        for (; l + VEC <= eff_j; l += VEC) {
+            size_t i  = b + l;
+            size_t ix = i + j;
+
+            __m512i va = _mm512_loadu_si512((const void*)(data + i));
+            __m512i vb = _mm512_loadu_si512((const void*)(data + ix));
+
+            __m512i vmin = _mm512_min_epu32(va, vb);
+            __m512i vmax = _mm512_max_epu32(va, vb);
+
+            if (ascending) {
+                _mm512_storeu_si512((void*)(data + i),      vmin);
+                _mm512_storeu_si512((void*)(data + ix),     vmax);
+            } else {
+                _mm512_storeu_si512((void*)(data + i),      vmax);
+                _mm512_storeu_si512((void*)(data + ix),     vmin);
+            }
+        }
+
+        for (; l < eff_j; ++l) {
+            size_t i  = b + l;
+            size_t ix = i + j;
+            if (ix >= n) break;
+
+            uint32_t a = data[i];
+            uint32_t bval = data[ix];
+
+            if (ascending ? (a > bval) : (a < bval)) {
+                data[i]   = bval;
+                data[ix]  = a;
+            }
+        }
+    }
+}
+
+static void bitonic_step_scalar(uint32_t *data, size_t n,
+                                size_t j, size_t k)
+{
+    #pragma omp for schedule(static)
+    for (ptrdiff_t ii = 0; ii < (ptrdiff_t)n; ++ii) {
+        size_t i   = (size_t)ii;
+        size_t ixj = i ^ j;
+        if (ixj > i && ixj < n) {
+            uint32_t a = data[i];
+            uint32_t b = data[ixj];
+            int ascending = ((i & k) == 0);
+            if ((a > b) == ascending) {
+                data[i]   = b;
+                data[ixj] = a;
+            }
+        }
+    }
+}
+//------------------------------------------------------------------------------------------------------------
+void simd_bitonic_sort_uint32(uint32_t *data, size_t n)
+{
+    if (n < 2) return;
+    //------------------------------------------------------------------------------------------------------------
+    vector_presort(data, n);
+    //------------------------------------------------------------------------------------------------------------
+    #pragma omp parallel
+    {
+        for (size_t k = 2; k <= n; k <<= 1) {
+            bitonic_step_simd512(data, n, k);
+            for (size_t j = k >> 2; j > 0; j >>= 1) {
+                bitonic_step_scalar(data, n, j, k);
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------
+void simd_bitonic_sort_uint32_k(uint32_t *data, size_t n, size_t k_start)
+{
+    if (n < 2) return;
+    if (k_start < 2) {
+        simd_bitonic_sort_uint32(data, n);
+        return;
+    }
+    #pragma omp parallel
+    {
+        for (size_t k = 2 * k_start; k <= n; k <<= 1) {
+            bitonic_step_simd512(data, n, k);
+            for (size_t j = k >> 2; j > 0; j >>= 1) {
+                bitonic_step_scalar(data, n, j, k);
+            }
+        }
+    }
 }
 //------------------------------------------------------------------------------------------------------------
