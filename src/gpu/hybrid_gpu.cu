@@ -53,7 +53,7 @@ extern "C" void hybrid_sort(uint32_t *arr, size_t N, size_t K_CPU_MAX, char* typ
 extern "C" void hybrid_sort_huge(uint32_t *arr, size_t N, size_t K_CPU_MAX, char* type) {
     size_t free_memory = getGPUFreeMemory() / 1.3;
     printf("[FREE_MEMORY] %zu\n", free_memory);
-    if(N * (size_t)sizeof(uint32_t) > getGPUFreeMemory() / 1.3){
+    if(N * (size_t)sizeof(uint32_t) > free_memory){
     //if(true){ 
         size_t K = (K_CPU_MAX);
         int device = 0;
