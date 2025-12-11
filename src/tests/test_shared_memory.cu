@@ -12,6 +12,15 @@ using std::chrono::duration;
 using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
 
+size_t L3CACHE = 33554432;
+
+void warmup_cache(){
+    std::vector<char> val(L3CACHE, 0);
+    for(int i=0;i<L3CACHE;i++){
+        val[i] += 7;
+    }
+}
+
 #define CHECK_CUDA(call) do {                                         \
   cudaError_t _e = (call);                                            \
   if (_e != cudaSuccess) {                                            \
@@ -25,19 +34,21 @@ extern "C" void add1_simd(char *data, size_t N);
 
 
 void test_cpu(size_t N){
-    void *t = mmap(NULL, N, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS , -1, 0);
+    void *t = mmap(NULL, N, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     char *arr = (char*)t;
     if(t == MAP_FAILED){
         printf("allocating MMAP failed");
         exit(1);
     }
     for(size_t i =0; i<N; i++){
-        arr[i] = 0;
+        arr[i] = 1;
     }
     auto start = high_resolution_clock::now();
 
-    for(size_t i =0; i< N; i++){
-        arr[i] += 1;
+    for(int i=0;i<10;i++){
+        for(size_t i =0;i<N;i++){
+            arr[i]++;
+        }
     }
 
     auto end = high_resolution_clock::now();
@@ -47,7 +58,34 @@ void test_cpu(size_t N){
     }
     
     duration<double> duration = end - start;
-    cout << "Time taken MMAP: " << duration_cast<std::chrono::milliseconds>(duration).count() << " milliseconds" << endl;
+    cout << "Time taken MMAP: " << duration_cast<std::chrono::microseconds>(duration).count() << " milliseconds" << endl;
+    
+}
+
+void test_cpu2(size_t N){
+    char *arr;
+    posix_memalign((void **) &arr, 64, N);
+    if(!arr){
+        printf("allocating MMAP failed");
+        exit(1);
+    }
+    for(size_t i =0; i<N; i++){
+        arr[i] = 1;
+    }
+    auto start = high_resolution_clock::now();
+
+    for(int i=0;i<10;i++){
+        for(size_t i =0;i<N;i++){
+            arr[i]++;
+        }
+    }
+
+    auto end = high_resolution_clock::now();
+    
+    free(arr);
+    
+    duration<double> duration = end - start;
+    cout << "Time taken posix_memalign: " << duration_cast<std::chrono::microseconds>(duration).count() << " milliseconds" << endl;
     
 }
 
@@ -61,7 +99,7 @@ void test_cudaMallocHost(size_t N){
 
     CHECK_CUDA(cudaMallocHost((void**)&data, N)); 
     for(size_t i =0;i<N;i++){
-        data[i] = 0;
+        data[i] = 1;
     }
     char* dbuf = NULL;
     CHECK_CUDA(cudaMalloc((void**)&dbuf, (size_t)N));
@@ -79,14 +117,17 @@ void test_cudaMallocHost(size_t N){
     CHECK_CUDA(cudaFree(dbuf));
     CHECK_CUDA(cudaStreamDestroy(s));
     auto start = high_resolution_clock::now();
-    
-    add1_simd(data, N);
+    for(int i=0;i<10;i++){
+        for(size_t i =0;i<N;i++){
+            data[i]++;
+        }
+    }
     auto end = high_resolution_clock::now();
 
     CHECK_CUDA(cudaFreeHost(data));
     
     auto duration = end - start;
-    cout << "Time taken cudaMallocHost: " << duration_cast<std::chrono::milliseconds>(duration).count() << " milliseconds" << endl;
+    cout << "Time taken cudaMallocHost: " << duration_cast<std::chrono::microseconds>(duration).count() << " milliseconds" << endl;
    
 }
 
@@ -95,32 +136,50 @@ void test_cudaMallocManaged(size_t N){
 
     CHECK_CUDA(cudaMallocManaged((void**)&tmp, N, cudaMemAttachGlobal)); 
     for(size_t i =0;i<N;i++){
-        tmp[i] = 0;
+        tmp[i] = 1;
     }
-    
+    int device = 0;
+    CHECK_CUDA(cudaGetDevice(&device));
+    cudaMemLocation loc{};
+    loc.type = cudaMemLocationTypeDevice;   
+    loc.id   = device;  
     int grid = (int)((N+255)/256);
-    add1<<< grid, 256>>>(tmp, N);
-
-    auto start = std::chrono::high_resolution_clock::now();
     
-    add1_simd(tmp, N);
-    auto end = std::chrono::high_resolution_clock::now();
-
+    CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, loc, 0));
+   
+    add1<<< grid, 256>>>(tmp, N);
+    CHECK_CUDA(cudaGetLastError());
+    CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, cudaCpuDeviceId, 0));
+    CHECK_CUDA(cudaDeviceSynchronize());
+    auto start = high_resolution_clock::now();
+    for(int i=0;i<10;i++){
+        for(size_t i =0;i<N;i++){
+            tmp[i]++;
+        }
+    }
+    auto end = high_resolution_clock::now();
+    int total{};
+    for(size_t i=0;i<N;i++){
+        total +=tmp[i];
+    }
     CHECK_CUDA(cudaFree(tmp));
     auto duration = end - start;
-    cout << "Time taken cudaMallocManaged: " << duration_cast<std::chrono::milliseconds>(duration).count() << " milliseconds" << endl;
+    cout << "Time taken cudaMallocManaged: " << duration_cast<std::chrono::microseconds>(duration).count() << " microseconds" << endl;
    
 }
 
 
 int main(){
     size_t N = 33554432 * 16;
+    N = 256 * 1024;
     // define vector for cache-size
-
+    N = 1048576 * 8;
+    for(int i=0;i<10;i++)warmup_cache();
     test_cpu(N);
-    
+   //test_cpu2(N);
+    for(int i=0;i<10;i++)warmup_cache();
     test_cudaMallocHost(N);
-    
+    for(int i=0;i<10;i++)warmup_cache();
     test_cudaMallocManaged(N);
 
     return 0;
