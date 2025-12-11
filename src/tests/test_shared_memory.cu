@@ -170,17 +170,20 @@ void test_cudaMallocManaged(size_t N){
 
 
 int main(){
-    size_t N = 33554432 * 16;
-    N = 256 * 1024;
-    // define vector for cache-size
-    N = 1048576 * 8;
-    for(int i=0;i<10;i++)warmup_cache();
-    test_cpu(N);
-   //test_cpu2(N);
-    for(int i=0;i<10;i++)warmup_cache();
-    test_cudaMallocHost(N);
-    for(int i=0;i<10;i++)warmup_cache();
-    test_cudaMallocManaged(N);
-
+    size_t L3 = 33554432;
+    size_t L2 = 1048576 * 8;
+    size_t L1 = 356352;
+    std::vector<size_t> sizes = {L1, L2, L3};
+    for(auto N : sizes){
+        cout << "TEST CASES FOR SIZE[" << N <<"]:"<< endl;    
+        for(int i=0;i<10;i++)warmup_cache();
+        test_cpu(N);
+        for(int i=0;i<10;i++)warmup_cache();
+        test_cudaMallocHost(N);
+        for(int i=0;i<10;i++)warmup_cache();
+        test_cudaMallocManaged(N);
+        cout << endl;
+    }
+    
     return 0;
 }
