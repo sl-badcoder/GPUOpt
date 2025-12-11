@@ -1,26 +1,26 @@
+//------------------------------------------------------------------------------------------------------------
 #include <iostream>
 #include <chrono>
 #include <vector>
-
+//------------------------------------------------------------------------------------------------------------
 #include "cuda_runtime.h"
 #include <sys/mman.h>
-
-
+//------------------------------------------------------------------------------------------------------------
 using std::cout;
 using std::endl;
 using std::chrono::duration;
 using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
-
+//------------------------------------------------------------------------------------------------------------
 size_t L3CACHE = 33554432;
-
+//------------------------------------------------------------------------------------------------------------
 void warmup_cache(){
     std::vector<char> val(L3CACHE, 0);
     for(int i=0;i<L3CACHE;i++){
         val[i] += 7;
     }
 }
-
+//------------------------------------------------------------------------------------------------------------
 #define CHECK_CUDA(call) do {                                         \
   cudaError_t _e = (call);                                            \
   if (_e != cudaSuccess) {                                            \
@@ -29,10 +29,9 @@ void warmup_cache(){
     exit(1);                                                          \
   }                                                                   \
 } while (0)
-
+//------------------------------------------------------------------------------------------------------------
 extern "C" void add1_simd(char *data, size_t N);
-
-
+//------------------------------------------------------------------------------------------------------------
 void test_cpu(size_t N){
     void *t = mmap(NULL, N, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     char *arr = (char*)t;
@@ -61,7 +60,7 @@ void test_cpu(size_t N){
     cout << "Time taken MMAP: " << duration_cast<std::chrono::microseconds>(duration).count() << " milliseconds" << endl;
     
 }
-
+//------------------------------------------------------------------------------------------------------------
 void test_cpu2(size_t N){
     char *arr;
     posix_memalign((void **) &arr, 64, N);
@@ -88,12 +87,12 @@ void test_cpu2(size_t N){
     cout << "Time taken posix_memalign: " << duration_cast<std::chrono::microseconds>(duration).count() << " milliseconds" << endl;
     
 }
-
+//------------------------------------------------------------------------------------------------------------
 __global__ void add1(char* arr, size_t N){
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if(i<N)arr[i] += 1;
 }
-
+//------------------------------------------------------------------------------------------------------------
 void test_cudaMallocHost(size_t N){
     char* data;
 
@@ -130,7 +129,7 @@ void test_cudaMallocHost(size_t N){
     cout << "Time taken cudaMallocHost: " << duration_cast<std::chrono::microseconds>(duration).count() << " milliseconds" << endl;
    
 }
-
+//------------------------------------------------------------------------------------------------------------
 void test_cudaMallocManaged(size_t N){
     char* tmp;
 
@@ -167,13 +166,13 @@ void test_cudaMallocManaged(size_t N){
     cout << "Time taken cudaMallocManaged: " << duration_cast<std::chrono::microseconds>(duration).count() << " microseconds" << endl;
    
 }
-
-
+//------------------------------------------------------------------------------------------------------------
 int main(){
     size_t L3 = 33554432;
     size_t L2 = 1048576 * 8;
     size_t L1 = 356352;
     std::vector<size_t> sizes = {L1, L2, L3};
+
     for(auto N : sizes){
         cout << "TEST CASES FOR SIZE[" << N <<"]:"<< endl;    
         for(int i=0;i<10;i++)warmup_cache();
@@ -187,3 +186,4 @@ int main(){
     
     return 0;
 }
+//------------------------------------------------------------------------------------------------------------
