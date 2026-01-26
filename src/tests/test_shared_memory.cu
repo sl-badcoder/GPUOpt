@@ -389,55 +389,116 @@ void test_ramVramPatternPinned2(size_t N){
     auto end = high_resolution_clock::now();
     CHECK_CUDA(cudaFreeHost(data));
 
-
-
-    
     auto duration = end - start;
     cout << "Time taken patternPinned: " << duration_cast<std::chrono::microseconds>(duration).count() << "  microseconds" << endl;
 }
-void test_ramVramPatternPinned2(size_t N){
-
+void test_ramVramPatternPinned2_(size_t N){
+    int dev = 0;
+    CHECK_CUDA(cudaGetDevice(&dev));
     char* data;
     auto start = high_resolution_clock::now();
     // RAM -> VRAM
     CHECK_CUDA(cudaMallocManaged((void**)&data, N , cudaMemAttachGlobal)); 
-    for(size_t i =0;i<N;i++){
+    /**for(size_t i =0;i<N;i++){
         data[i] = 1;
-    }
+    }*/
     int grid = (int)((N+255)/256);
+    CHECK_CUDA(cudaMemPrefetchAsync(data, N, dev));
     add1<<< grid, 256>>>(data, N);
     CHECK_CUDA(cudaGetLastError());
     CHECK_CUDA(cudaDeviceSynchronize());
     // VRAM -> RAM
-
+    CHECK_CUDA(cudaMemPrefetchAsync(data, N, cudaCpuDeviceId));
+    CHECK_CUDA(cudaDeviceSynchronize());
     arrayTest(data, N);
     // RAM -> VRAM
+    CHECK_CUDA(cudaMemPrefetchAsync(data, N, dev));
     add1<<< grid, 256>>>(data, N);
     CHECK_CUDA(cudaGetLastError());
     CHECK_CUDA(cudaDeviceSynchronize());
     // VRAM -> RAM
+    CHECK_CUDA(cudaMemPrefetchAsync(data, N, cudaCpuDeviceId));
+    CHECK_CUDA(cudaDeviceSynchronize());
     arrayTest(data, N);   
 
-    
-    auto end = high_resolution_clock::now();
     CHECK_CUDA(cudaFree(data));
 
-
-
+    auto end = high_resolution_clock::now();
     
     auto duration = end - start;
     cout << "Time taken pattern unified: " << duration_cast<std::chrono::microseconds>(duration).count() << "  microseconds" << endl;
 }
 //------------------------------------------------------------------------------------------------------------
+void test_ramVramPatternPinned3(size_t N){
+
+    char* data;
+    auto start = high_resolution_clock::now();
+    int dev = 0;
+    CHECK_CUDA(cudaGetDevice(&dev));
+    // RAM -> VRAM
+    CHECK_CUDA(cudaMallocManaged((void**)&data, N , cudaMemAttachGlobal)); 
+    /**for(size_t i =0;i<N;i++){
+        data[i] = 1;
+    }*/
+
+    int grid = (int)((N+255)/256);
+    CHECK_CUDA(cudaMemPrefetchAsync(data, N, dev));
+    add1<<< grid, 256>>>(data, N);
+    CHECK_CUDA(cudaGetLastError());
+    //CHECK_CUDA(cudaDeviceSynchronize());
+    // VRAM -> RAM
+    CHECK_CUDA(cudaFree(data));
+    CHECK_CUDA(cudaMallocManaged((void**)&data, N , cudaMemAttachGlobal)); 
+    /**for(size_t i =0;i<N;i++){
+        data[i] = 1;
+    }*/
+    CHECK_CUDA(cudaMemPrefetchAsync(data, N, cudaCpuDeviceId));
+    CHECK_CUDA(cudaDeviceSynchronize());
+    arrayTest(data, N);
+    // RAM -> VRAM
+    CHECK_CUDA(cudaMemPrefetchAsync(data, N, dev));
+    add1<<< grid, 256>>>(data, N);
+    CHECK_CUDA(cudaGetLastError());
+    CHECK_CUDA(cudaDeviceSynchronize());
+    //CHECK_CUDA(cudaDeviceSynchronize());
+    // VRAM -> RAM
+    CHECK_CUDA(cudaFree(data));
+    CHECK_CUDA(cudaMallocManaged((void**)&data, N , cudaMemAttachGlobal)); 
+    /**for(size_t i =0;i<N;i++){
+        data[i] = 1;
+    }*/
+    CHECK_CUDA(cudaMemPrefetchAsync(data, N, cudaCpuDeviceId));
+    CHECK_CUDA(cudaDeviceSynchronize());
+    arrayTest(data, N);   
+
+    
+    CHECK_CUDA(cudaFree(data));
+    auto end = high_resolution_clock::now();
+
+    auto duration = end - start;
+    cout << "Time taken pattern unified: " << duration_cast<std::chrono::microseconds>(duration).count() << "  microseconds" << endl;
+    
+}
+
+//------------------------------------------------------------------------------------------------------------
 int main(){
     size_t L3 = 33554432;
     size_t L2 = 1048576 * 8;
     size_t L1 = 356352;
-    std::vector<size_t> sizes = {L1, L2, L3};
 
     size_t GiB = 1073741824;
+    std::vector<size_t> sizes = {L1, L2, L3, 4 * GiB, 8 * GiB, 16 * GiB};
+    for(auto sz : sizes){
+        std::cout << "SIZES: " << sz << std::endl;
+        warmup_cache();
+        test_ramVramPatternPinned2_( sz);
+        warmup_cache();
+        test_ramVramPatternPinned3( sz);
+    }
     warmup_cache();
     test_cudaMallocManaged(L1);
+
+
     //testRAMVRAM(8 * GiB);
     /**for(auto N : sizes){
         cout << "TEST CASES FOR SIZE[" << N <<"]:"<< endl;    
