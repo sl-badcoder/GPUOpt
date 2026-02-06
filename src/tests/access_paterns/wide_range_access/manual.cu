@@ -5,6 +5,13 @@
 #include "../../../../include/cost_model/cpu_usage.h"
 #include <iostream>
 #include <stdio.h>
+#include <vector>
+#include <chrono>
+using std::cout;
+using std::endl;
+using std::chrono::duration;
+using std::chrono::duration_cast;
+using std::chrono::high_resolution_clock;
 //---------------------------------------------------------------------------------------
 __global__ void wide_range_access_kernel(uint32_t* data, size_t N, int width) {
     size_t i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -29,9 +36,9 @@ size_t actualPrefetchBytes(size_t N, size_t free_bytes){
 void wide_stride_access_wo_prefetch_wo_memAdvise(size_t N, size_t width){
     uint32_t* data = nullptr;
     CHECK_CUDA(cudaMallocManaged(&data, N * sizeof(uint32_t), cudaMemAttachGlobal)); // allocate unified memory
+    auto start = high_resolution_clock::now();
     int threadsPerBlock = 256;
     int blocksPerGrid = (N - width + threadsPerBlock - 1) / threadsPerBlock;
-
     for(size_t i = 0; i < N - width; i++){
         int sum = data[i] + data[i+width];
         sum *= 10;
@@ -45,12 +52,19 @@ void wide_stride_access_wo_prefetch_wo_memAdvise(size_t N, size_t width){
     }
 
     int a = tst + 20;
+    auto end = high_resolution_clock::now();
     CHECK_CUDA(cudaFree(data));
+    auto duration = end - start;
+
+    cout << "Time taken wo prefetch wo memadvise: " << duration_cast<std::chrono::milliseconds>(duration).count() << " ms" << endl;
+
 }
 //---------------------------------------------------------------------------------------
 void wide_stride_access_wo_prefetch(size_t N, size_t width){
     uint32_t* data = nullptr;
     CHECK_CUDA(cudaMallocManaged(&data, N * sizeof(uint32_t), cudaMemAttachGlobal)); // allocate unified memory
+    auto start = high_resolution_clock::now();
+
     int threadsPerBlock = 256;
     int blocksPerGrid = (N - width + threadsPerBlock - 1) / threadsPerBlock;
     int device = 0;
@@ -59,7 +73,7 @@ void wide_stride_access_wo_prefetch(size_t N, size_t width){
     loc.type = cudaMemLocationTypeDevice;   
     loc.id   = device;  
     int grid = (int)((N+255)/256);
-    CHECK_CUDA(cudaMemAdvise((void*)data, N * sizeof(uint32_t), cudaMemAdviseSetAccessedBy, 0));
+    CHECK_CUDA(cudaMemAdvise((void*)data, N * sizeof(uint32_t), cudaMemAdviseSetPreferredLocation, loc.id));
     CHECK_CUDA(cudaMemAdvise((void*)data, N* sizeof(uint32_t), cudaMemAdviseSetAccessedBy, cudaCpuDeviceId));
 
     for(size_t i = 0; i < N - width; i++){
@@ -74,6 +88,11 @@ void wide_stride_access_wo_prefetch(size_t N, size_t width){
     }
 
     int a = tst + 20;
+    
+    auto end = high_resolution_clock::now();
+    auto duration = end - start;
+
+    cout << "Time taken wo Prefetch: " << duration_cast<std::chrono::milliseconds>(duration).count() << " ms" << endl;
 
     CHECK_CUDA(cudaFree(data));
 }
@@ -81,6 +100,8 @@ void wide_stride_access_wo_prefetch(size_t N, size_t width){
 void wide_stride_access_wo_memAdvise(size_t N, size_t width){
     uint32_t* data = nullptr;
     CHECK_CUDA(cudaMallocManaged(&data, N * sizeof(uint32_t), cudaMemAttachGlobal)); // allocate unified memory
+    auto start = high_resolution_clock::now();
+
     int threadsPerBlock = 256;
     int blocksPerGrid = (N - width + threadsPerBlock - 1) / threadsPerBlock;
     int device = 0;
@@ -122,6 +143,10 @@ void wide_stride_access_wo_memAdvise(size_t N, size_t width){
     }
 
     int a = tst + 20;
+    auto end = high_resolution_clock::now();
+    auto duration = end - start;
+    cout << "Time taken wo memAdvise: " << duration_cast<std::chrono::milliseconds>(duration).count() << " ms" << endl;
+   
     CHECK_CUDA(cudaStreamDestroy(stream));
     CHECK_CUDA(cudaStreamDestroy(s2));
     CHECK_CUDA(cudaFree(data));
@@ -129,6 +154,22 @@ void wide_stride_access_wo_memAdvise(size_t N, size_t width){
 }
 //---------------------------------------------------------------------------------------
 int main(){
-    wide_stride_access_wo_memAdvise((size_t)1024 * 1024 * 1024 * 5, 10000);
+    // check different strides against different memory sizes
+    size_t MiB = (size_t)1024*1024;
+    size_t Gib = (size_t)1024*1024*1024;
+    std::vector<size_t> values = {1, 32, 1024, 1048576};
+    std::vector<size_t> sizes = {(size_t)1 * Gib,(size_t) 2 * Gib, (size_t)4 * Gib, (size_t)8 * Gib, (size_t)12 * Gib, (size_t)16 * Gib, (size_t) 20 * Gib,(size_t) 24 * Gib};
+    for(auto width : values){
+        for(auto sz: sizes){
+            sz = (size_t)sz/(size_t)4;
+            cout << "sizes: " << sz * 4 << " width: " << width << endl;
+            //warmup_cache();
+            wide_stride_access_wo_prefetch_wo_memAdvise(sz,width );
+            //warmup_cache();
+            wide_stride_access_wo_prefetch(sz, width);
+            //warmup_cache();
+            wide_stride_access_wo_memAdvise(sz, width);
+        }
+    }
     return 0;
 }
