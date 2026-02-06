@@ -321,46 +321,38 @@ extern "C" void gpu_bitonic_sort_uint32_chunk(uint32_t *dbuf, size_t N, cudaStre
     //------------------------------------------------------------------------------------------------------------
 }
 //------------------------------------------------------------------------------------------------------------
-extern "C" void gpu_bitonic_sort_uint32_k_un(uint32_t *arr, size_t N, size_t k_start){
+extern "C" void gpu_bitonic_sort_uint32_k_un(uint32_t *arr, size_t N, size_t k_start, cudaStream_t stream){
     printf("[NUMBER] OF ELEMENTS: %zu\n", N);
-    //N = N / (size_t)4;
     if (N <= 1) return;
-    //------------------------------------------------------------------------------------------------------------
-    // check if we map memory or not
-    //------------------------------------------------------------------------------------------------------------
-    //------------------------------------------------------------------------------------------------------------
-    // define block size
-    const size_t BLOCK = 1024;
-    const size_t TILE = 4 * BLOCK;
-    dim3 block(BLOCK);
-    size_t shmem_block = (TILE + TILE/32) *(size_t) sizeof(uint32_t);
-    //------------------------------------------------------------------------------------------------------------
-    size_t grid_b = (N + TILE - 1)/ TILE;
-    //------------------------------------------------------------------------------------------------------------ 
-    for (size_t k = 2 * k_start; k <= N; k <<= 1LL) {
-        //------------------------------------------------------------------------------------------------------------ 
-        for (size_t j = k >> 1; j > TILE; j >>= 1LL) {
-        //------------------------------------------------------------------------------------------------------------ 
-            {
-                size_t grid = (N + BLOCK - 1) / BLOCK;
-                bitonic_step_for<<<grid, BLOCK>>>(arr, j, k, N);
-                CHECK_CUDA(cudaGetLastError());
 
-            }
-        }
-        {
-            size_t grid = (N + (2*TILE) - 1) / (2*TILE);
-            bitonic_shared<TILE><<<grid, BLOCK, ((2* TILE)+(2*TILE)/32)*sizeof(uint32_t)>>>(arr,k, N);
+    const size_t BLOCK = 1024;
+    const size_t TILE  = 4 * BLOCK;
+
+    dim3 block(BLOCK);
+
+    for (size_t k = 2 * k_start; k <= N; k <<= 1ULL) {
+        for (size_t j = k >> 1; j > TILE; j >>= 1ULL) {
+            size_t grid = (N + BLOCK - 1) / BLOCK;
+
+            // Launch on the provided stream
+            bitonic_step_for<<<grid, BLOCK, 0, stream>>>(arr, j, k, N);
             CHECK_CUDA(cudaGetLastError());
         }
-        //printf("k:%zu\n", k);
+
+        {
+            size_t grid = (N + (2 * TILE) - 1) / (2 * TILE);
+            size_t shmem = ((2 * TILE) + (2 * TILE) / 32) * sizeof(uint32_t);
+
+            // Launch on the provided stream (with dynamic shared mem)
+            bitonic_shared<TILE><<<grid, BLOCK, shmem, stream>>>(arr, k, N);
+            CHECK_CUDA(cudaGetLastError());
+        }
     }
-    //printf("END\n");
-    //------------------------------------------------------------------------------------------------------------
 }
+
 //------------------------------------------------------------------------------------------------------------
 // reverse the way how we run gpu_bitonic_sort
-extern "C" void gpu_bitonic_sort_uint32_k_un_b(uint32_t *arr, size_t N, size_t k_start, bool asc)
+/**extern "C" void gpu_bitonic_sort_uint32_k_un_b(uint32_t *arr, size_t N, size_t k_start, bool asc)
 {
     if (N <= 1) return;
     gpu_bitonic_sort_uint32_k_un(arr, N, k_start);
@@ -372,5 +364,5 @@ extern "C" void gpu_bitonic_sort_uint32_k_un_b(uint32_t *arr, size_t N, size_t k
         reverse_kernel_uint32<<<grid, BLOCK>>>(arr, N);
         CHECK_CUDA(cudaGetLastError());
     }
-}
+}**/
 //------------------------------------------------------------------------------------------------------------

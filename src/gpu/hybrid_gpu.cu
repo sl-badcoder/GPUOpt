@@ -36,16 +36,22 @@ extern "C" void hybrid_sort(uint32_t *arr, size_t N, size_t K_CPU_MAX, char* typ
     cudaMemLocation loc{};
     loc.type = cudaMemLocationTypeDevice;   
     loc.id   = device;  
- 
     // check if type is unified or not
     if(strcmp(type, "unified") == 0){
         printf("[STARTING] CUDA KERNELS\n");
         CHECK_CUDA(cudaMemPrefetchAsync(arr, N*sizeof(uint32_t), loc, 0, stream));
-        gpu_bitonic_sort_uint32_k_un(arr, N, K);
+        gpu_bitonic_sort_uint32_k_un(arr, N, K, stream);
+        //printf("here");
     }else{
         gpu_bitonic_sort_uint32_k(arr, N, K, false);
     }
-    CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaStreamSynchronize(stream));
+
+    CHECK_CUDA(cudaMemPrefetchAsync(arr, N*sizeof(uint32_t), cudaCpuDeviceId, stream));
+    CHECK_CUDA(cudaStreamSynchronize(stream));
+
+    CHECK_CUDA(cudaStreamDestroy(stream));
+    //CHECK_CUDA(cudaMemPrefetchAsync(arr, N*sizeof(uint32_t), cudaCpuDeviceId, stream));
     //------------------------------------------------------------------------------------------------------------
 }
 
@@ -77,14 +83,14 @@ extern "C" void hybrid_sort_huge(uint32_t *arr, size_t N, size_t K_CPU_MAX, char
         // sort left half on gpu
         CHECK_CUDA(cudaMemPrefetchAsync(left,  left_size * sizeof(uint32_t), loc, 0, stream));
         CHECK_CUDA(cudaStreamSynchronize(stream));
-        gpu_bitonic_sort_uint32_k_un(left, left_size, K);
+        gpu_bitonic_sort_uint32_k_un(left, left_size, K, stream);
 
         CHECK_CUDA(cudaMemPrefetchAsync(right, left_size*sizeof(uint32_t), loc, 0, stream));
         CHECK_CUDA(cudaStreamSynchronize(stream));
         //CHECK_CUDA(cudaDeviceSynchronize());
         // sort right half on gpu
         printf("[START] SORTING RIGHT HALF\n");
-        gpu_bitonic_sort_uint32_k_un_b(right, right_size, K, false);
+        //gpu_bitonic_sort_uint32_k_un_b(right, right_size, K, false);
         
         cudaMemLocation host_loc{};
         host_loc.type = cudaMemLocationTypeHost;

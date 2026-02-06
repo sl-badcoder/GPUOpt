@@ -208,20 +208,23 @@ void test_ramVramPattern(size_t N){
     CHECK_CUDA(cudaMemAdvise((void*)tmp, N, cudaMemAdviseSetAccessedBy, cudaCpuDeviceId));
 
     // RAM -> VRAM
-    CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, device, s2));
+    //CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, device, s2));
     //cudaStreamSynchronize(stream);
     //CHECK_CUDA(cudaDeviceSynchronize());    
     add1<<< grid, 256, 0, stream>>>(tmp, N);
+    CHECK_CUDA(cudaGetLastError());
+    CHECK_CUDA(cudaDeviceSynchronize());
     // VRAM -> RAM
-    CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, cudaCpuDeviceId, s2));
+    //CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, cudaCpuDeviceId, s2));
     //cudaStreamSynchronize(stream);
     arrayTest(tmp, N);
     // RAM -> VRAM
-    CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, device, s2));
+    //CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, device, s2));
     //cudaStreamSynchronize(stream);
     add1<<< grid, 256, 0, stream>>>(tmp, N);
+    CHECK_CUDA(cudaDeviceSynchronize());
     // VRAM -> RAM
-    CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, cudaCpuDeviceId, s2));
+    //CHECK_CUDA(cudaMemPrefetchAsync(tmp, N, cudaCpuDeviceId, s2));
     //cudaStreamSynchronize(stream);
     arrayTest(tmp, N);
 
@@ -403,21 +406,21 @@ void test_ramVramPatternPinned2_(size_t N){
         data[i] = 1;
     }*/
     int grid = (int)((N+255)/256);
-    CHECK_CUDA(cudaMemPrefetchAsync(data, N, dev));
+    //CHECK_CUDA(cudaMemPrefetchAsync(data, N, dev));
     add1<<< grid, 256>>>(data, N);
     CHECK_CUDA(cudaGetLastError());
     CHECK_CUDA(cudaDeviceSynchronize());
     // VRAM -> RAM
-    CHECK_CUDA(cudaMemPrefetchAsync(data, N, cudaCpuDeviceId));
+    //CHECK_CUDA(cudaMemPrefetchAsync(data, N, cudaCpuDeviceId));
     CHECK_CUDA(cudaDeviceSynchronize());
     arrayTest(data, N);
     // RAM -> VRAM
-    CHECK_CUDA(cudaMemPrefetchAsync(data, N, dev));
+    //CHECK_CUDA(cudaMemPrefetchAsync(data, N, dev));
     add1<<< grid, 256>>>(data, N);
     CHECK_CUDA(cudaGetLastError());
     CHECK_CUDA(cudaDeviceSynchronize());
     // VRAM -> RAM
-    CHECK_CUDA(cudaMemPrefetchAsync(data, N, cudaCpuDeviceId));
+    //CHECK_CUDA(cudaMemPrefetchAsync(data, N, cudaCpuDeviceId));
     CHECK_CUDA(cudaDeviceSynchronize());
     arrayTest(data, N);   
 
@@ -488,7 +491,7 @@ int main(){
 
     size_t GiB = 1073741824;
     std::vector<size_t> sizes = {L1, L2, L3, 4 * GiB, 8 * GiB, 16 * GiB};
-    for(auto sz : sizes){
+    /**for(auto sz : sizes){
         std::cout << "SIZES: " << sz << std::endl;
         warmup_cache();
         test_ramVramPatternPinned2_( sz);
@@ -497,7 +500,8 @@ int main(){
     }
     warmup_cache();
     test_cudaMallocManaged(L1);
-
+**/
+    test_ramVramPattern(268435456 * 4);
 
     //testRAMVRAM(8 * GiB);
     /**for(auto N : sizes){
@@ -511,7 +515,7 @@ int main(){
         cout << endl;
     }**/
     //test_ramVramPattern(0.01 * GiB);
-    warmup_cache();
+    //warmup_cache();
 
     //test_ramVramPatternPinned2(8 * GiB);
     return 0;

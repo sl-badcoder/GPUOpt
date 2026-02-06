@@ -96,19 +96,23 @@ int main(int argc, char **argv) {
             if(!data) {
                 return -1;
             }
-            double start = getCurTime();
             printf("[IN]: %lld \n", N);
+            CHECK_CUDA(cudaDeviceSynchronize());
+            double start = getCurTime();
             hybrid_sort(data, N,16, m);
-            double end = getCurTime();
+            CHECK_CUDA(cudaDeviceSynchronize());
+
             if(!is_sorted_u32(data, N)) {
+                double end = getCurTime();
                 printf("Array not sorted\n");
             } else {
+                double end = getCurTime();
                 printf("GPU Sort in %0.8f -> %0.8f per elem!\n", end - start, ((end - start) / (double) N));
             }
             //------------------------------------------------------------------------------------------------------------
             CHECK_CUDA(cudaFree(data));
         //------------------------------------------------------------------------------------------------------------
-        }else{
+        }else {
             printf("[START] PINNED TESTCASE...\n");
             uint32_t * data = create_random_data_u32_pinned(N, UINT32_MAX);
             if(!data){
@@ -126,6 +130,7 @@ int main(int argc, char **argv) {
             CHECK_CUDA(cudaFreeHost(data));
         }
     }
+    
     //------------------------------------------------------------------------------------------------------------
     return 0;
 }
