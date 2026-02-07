@@ -35,9 +35,6 @@ When we exceed VRAM size we pass over the array (VRAM_SIZE) and do the later lar
 - CPU executes pre-processing and large merging step at the end
 - GPU executes most of the work as long as it fits in VRAM
 
-<p align="center">
-  <img src="images/gpu_vs_cpu.png" width="600">
-</p>
 
 ### 2. Unified Memory vs. Explicit Data Movement
 A major part of the research evaluates:
