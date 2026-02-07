@@ -67,12 +67,5 @@ We look at different access patterns like having linear, wide-range access or wi
   - Prefetching and memory advice strategies
   - access patterns like linear/wide-range
 
----
-
-## Long-Term Goal
-The final outcome of this project is:
-- A **state-of-the-art Bitonic Sort implementation**
-- A **hybrid execution framework** that adapts to hardware and data size
-- A **sorting-network-based evaluation tool** for studying heterogeneous systems, memory models, and cost/performance trade-offs
 
 ---
