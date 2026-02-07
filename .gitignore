@@ -44,3 +44,5 @@ Thumbs.db
 *.nsys*
 *.sqlite*
 src/tests/results*
+*.qdstrm
+*.csv
