@@ -23,7 +23,9 @@ Bitonic Sort is particularly interesting in this context because:
 - Early stages can benefit from CPU execution
 - Later stages benefit from GPU throughput
 - Its access pattern stresses **memory systems**, making it ideal for studying **Unified Memory behavior**
-
+<p align="center">
+  <img src="images/bitonic_sort_architecture.png" width="600">
+</p>
 ---
 
 ## Research Focus
