@@ -1,4 +1,4 @@
-# Bitonic Sort in Heterogeneous Systems  
+# How should we work with Unified Memory? 
 ### Exploring Hybrid CPU/GPU Execution and Unified Memory
 
 ## Overview
