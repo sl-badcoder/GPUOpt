@@ -1,5 +1,18 @@
-# How should we work with Unified Memory ❔
+# 🚀 Optimizing CUDA Memory Layouts
 ---
+
+## Which Memory Layouts exist in CUDA?
+In Cuda there exists several possibilities to allocate shared memory, we will mainly look at the following three:
+- Unified Memory
+- Mapped Memory
+- Pinned Memory
+
+ `Memory Layout` | `Pinning Possible` | `Oversubscribing VRAM?` 
+ :--- | :---: | ---: 
+ Pinned Memory | :white_check_mark: | :x:
+ Unified Memory | :white_check_mark: | :white_check_mark: 
+
+## How should we work with Unified Memory?
 When working in the heterogeneous world where we can access the GPU and CPU simoultanesly the question arise on how we should allocate our shared memory. There are several ways for allocating this memory. In this repo we will mainly look at Unified Memory and Mapped Memory, since both are options to oversubscribe our VRAM without complex code changes. 
 
 ## Why should we look at oversubscribing VRAM?
